@@ -1,0 +1,23 @@
+{
+  "name": "Peyvi",
+  "short_name": "Peyvi",
+  "description": "Interactive Kurdish language learning app for kids",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3B82F6",
+  "orientation": "portrait-primary",
+  "categories": ["education", "kids", "language"],
+  "lang": "en",
+  "dir": "ltr",
+  "scope": "/",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/peyvi-logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

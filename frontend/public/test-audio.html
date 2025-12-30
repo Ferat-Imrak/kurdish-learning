@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kurdish TTS Audio Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-item {
+            background: white;
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #3B82F6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #2563EB;
+        }
+        .word {
+            font-size: 24px;
+            font-weight: bold;
+            color: #1F2937;
+            margin-bottom: 5px;
+        }
+        .translation {
+            color: #6B7280;
+            margin-bottom: 10px;
+        }
+        .status {
+            font-size: 12px;
+            color: #10B981;
+            margin-top: 10px;
+        }
+        .error {
+            color: #EF4444;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎙️ Kurdish TTS Audio Test</h1>
+    <p>Click the buttons to test Kurdish TTS audio playback</p>
+
+    <div class="test-item">
+        <div class="word">polîsê bang bike!</div>
+        <div class="translation">Call the police!</div>
+        <button onclick="testAudio('polîsê-bang-bike.mp3', this)">▶ Play</button>
+        <div class="status"></div>
+    </div>
+
+    <div class="test-item">
+        <div class="word">ji bo navenda bajêr çend e?</div>
+        <div class="translation">How much to the city center?</div>
+        <button onclick="testAudio('ji-bo-navenda-bajêr-çend-e.mp3', this)">▶ Play</button>
+        <div class="status"></div>
+    </div>
+
+    <div class="test-item">
+        <div class="word">roj</div>
+        <div class="translation">sun</div>
+        <button onclick="testAudio('roj.mp3', this)">▶ Play</button>
+        <div class="status"></div>
+    </div>
+
+    <div class="test-item">
+        <div class="word">pisîk</div>
+        <div class="translation">cat</div>
+        <button onclick="testAudio('pisîk.mp3', this)">▶ Play</button>
+        <div class="status"></div>
+    </div>
+
+    <div class="test-item">
+        <div class="word">ew sêv dixwe</div>
+        <div class="translation">He/She eats an apple</div>
+        <button onclick="testAudio('ew-sêv-dixwe.mp3', this)">▶ Play</button>
+        <div class="status"></div>
+    </div>
+
+    <div class="test-item">
+        <div class="word">Rojbaş! Tu çawa yî?</div>
+        <div class="translation">Good morning! How are you?</div>
+        <button onclick="testAudio('rojbaş-tu-çawa-yî.mp3', this)">▶ Play</button>
+        <div class="status"></div>
+    </div>
+
+    <script>
+        function testAudio(filename, button) {
+            const statusDiv = button.nextElementSibling;
+            statusDiv.textContent = 'Loading...';
+            statusDiv.className = 'status';
+            
+            const audioPath = '/audio/kurmanji-tts/' + filename;
+            console.log('Testing audio:', audioPath);
+            
+            const audio = new Audio(audioPath);
+            
+            audio.addEventListener('loadeddata', () => {
+                console.log('✅ Audio loaded:', filename);
+                console.log('   Duration:', audio.duration, 'seconds');
+                console.log('   Can play:', audio.readyState >= 2);
+                statusDiv.textContent = `Loaded! Duration: ${audio.duration.toFixed(2)}s`;
+            });
+            
+            audio.addEventListener('canplaythrough', () => {
+                console.log('✅ Can play through:', filename);
+            });
+            
+            audio.addEventListener('play', () => {
+                console.log('▶️  Playing:', filename);
+                button.textContent = '▶ Playing...';
+                statusDiv.textContent = 'Playing...';
+            });
+            
+            audio.addEventListener('ended', () => {
+                console.log('✅ Finished playing:', filename);
+                button.textContent = '▶ Play';
+                statusDiv.textContent = 'Finished!';
+                statusDiv.className = 'status';
+            });
+            
+            audio.addEventListener('error', (e) => {
+                console.error('❌ Error loading audio:', filename, e);
+                statusDiv.textContent = 'Error: ' + (audio.error ? audio.error.message : 'Unknown error');
+                statusDiv.className = 'status error';
+                button.textContent = '▶ Play';
+            });
+            
+            audio.volume = 1.0; // Set to maximum volume
+            audio.load();
+            
+            audio.play().catch(err => {
+                console.error('❌ Play error:', err);
+                statusDiv.textContent = 'Play error: ' + err.message;
+                statusDiv.className = 'status error';
+                button.textContent = '▶ Play';
+            });
+        }
+    </script>
+</body>
+</html>
+
+

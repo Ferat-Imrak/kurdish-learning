@@ -52,3 +52,4 @@ git commit -m "Update: mobile landing page, Capacitor setup, and bug fixes"
 git push -u origin master
 ```
 
+
