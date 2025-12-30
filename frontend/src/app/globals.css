@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Fredoka+One:wght@400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Kurdish:wght@400;700&display=swap');
+
+@layer base {
+  html {
+    font-family: 'Noto Sans Kurdish', Arial, sans-serif;
+  }
+  
+  body {
+    @apply min-h-screen bg-cream;
+    background-image:
+      radial-gradient(600px 200px at 0% 0%, rgba(255,159,28,0.08), transparent 60%),
+      radial-gradient(600px 200px at 100% 0%, rgba(46,196,182,0.08), transparent 60%),
+      radial-gradient(600px 200px at 50% 100%, rgba(155,93,229,0.08), transparent 60%);
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-style: normal !important;
+  }
+  em, i {
+    font-style: normal !important;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primaryBlue text-white px-6 py-3 rounded-2xl text-base md:text-lg font-bold shadow-md hover:scale-105 hover:brightness-110 transition-transform duration-200 ease-in-out;
+  }
+  
+  .btn-secondary {
+    @apply bg-primaryBlue text-white px-6 py-3 rounded-2xl text-base md:text-lg font-bold shadow-md hover:scale-105 hover:brightness-110 transition-transform duration-200 ease-in-out;
+  }
+  
+  .btn-playful {
+    @apply bg-gradient-to-r from-brand-purple to-accent-pink text-white px-8 py-4 rounded-2xl text-xl font-bold shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 transition-all duration-200;
+  }
+  
+  .card {
+    @apply bg-white rounded-xl shadow-lg p-6;
+  }
+  
+  .text-kurdish {
+    font-family: 'Noto Sans Kurdish', Arial, sans-serif;
+  }
+  
+  .text-playful {
+    font-family: 'Fredoka One', cursive;
+    font-style: normal !important;
+  }
+}
+
+/* Gentle overrides to move away from harsh red accents */
+@layer utilities {
+  .text-kurdish-red { color: theme('colors.textNavy') !important; }
+  .bg-kurdish-red { background-color: theme('colors.textNavy') !important; }
+  .border-kurdish-red { border-color: theme('colors.textNavy') !important; }
+}
+

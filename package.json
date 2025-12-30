@@ -1,0 +1,21 @@
+{
+  "name": "kurdish-learning-app",
+  "version": "1.0.0",
+  "description": "A Kurdish Kids Language Learning App",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "start": "cd frontend && npm start",
+    "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install"
+  },
+  "keywords": ["kurdish", "language-learning", "kids", "education"],
+  "author": "Ferhat",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
+

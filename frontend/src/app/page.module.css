@@ -1,0 +1,8 @@
+.hero {
+  background: radial-gradient(1200px 600px at 20% 0%, rgba(227,30,36,0.08), transparent 60%),
+              radial-gradient(1200px 600px at 80% 20%, rgba(0,166,81,0.08), transparent 60%);
+}
+
+.section {
+  background: linear-gradient(to bottom right, rgba(255,215,0,0.1), rgba(255,255,255,0));
+}
