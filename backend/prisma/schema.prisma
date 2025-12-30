@@ -1,0 +1,219 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  name         String
+  role         UserRole      @default(PARENT)
+  subscriptionPlan SubscriptionPlan? @default(MONTHLY)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  // Relations
+  children     Child[]
+  sessions     Session[]
+
+  @@map("users")
+}
+
+model Child {
+  id          String   @id @default(cuid())
+  name        String
+  age         Int
+  avatar      String?
+  language    Language @default(KURMANJI)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  parentId    String
+  parent      User     @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  progress    Progress[]
+  achievements Achievement[]
+  gameSessions GameSession[]
+
+  @@map("children")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  // Relations
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Lesson {
+  id          String      @id @default(cuid())
+  title       String
+  description String?
+  type        LessonType
+  language    Language
+  difficulty  Difficulty  @default(BEGINNER)
+  order       Int
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relations
+  content     LessonContent[]
+  progress    Progress[]
+
+  @@map("lessons")
+}
+
+model LessonContent {
+  id        String   @id @default(cuid())
+  type      ContentType
+  title     String?
+  content   String   // JSON string containing the actual content
+  audioUrl  String?
+  imageUrl  String?
+  order     Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  lessonId  String
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@map("lesson_content")
+}
+
+model Progress {
+  id          String        @id @default(cuid())
+  status      ProgressStatus @default(NOT_STARTED)
+  score       Int?
+  timeSpent   Int?          // in seconds
+  attempts    Int           @default(0)
+  completedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  childId     String
+  child       Child         @relation(fields: [childId], references: [id], onDelete: Cascade)
+  lessonId    String
+  lesson      Lesson        @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([childId, lessonId])
+  @@map("progress")
+}
+
+model Achievement {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  icon        String
+  points      Int      @default(10)
+  createdAt   DateTime @default(now())
+
+  // Relations
+  childId     String
+  child       Child    @relation(fields: [childId], references: [id], onDelete: Cascade)
+
+  @@map("achievements")
+}
+
+model Game {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  type        GameType
+  language    Language
+  difficulty  Difficulty @default(BEGINNER)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  gameSessions GameSession[]
+
+  @@map("games")
+}
+
+model GameSession {
+  id          String   @id @default(cuid())
+  score       Int
+  timeSpent   Int      // in seconds
+  completedAt DateTime @default(now())
+
+  // Relations
+  gameId      String
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  childId     String
+  child       Child    @relation(fields: [childId], references: [id], onDelete: Cascade)
+
+  @@map("game_sessions")
+}
+
+// Enums
+enum UserRole {
+  PARENT
+  ADMIN
+}
+
+enum Language {
+  KURMANJI
+  SORANI
+}
+
+enum LessonType {
+  ALPHABET
+  NUMBERS
+  WORDS
+  SONGS
+  GAMES
+}
+
+enum ContentType {
+  TEXT
+  IMAGE
+  AUDIO
+  VIDEO
+  INTERACTIVE
+  QUIZ
+}
+
+enum Difficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum ProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  MASTERED
+}
+
+enum GameType {
+  FLASHCARDS
+  MATCHING
+  MEMORY
+  LISTENING
+  TRACING
+}
+
+enum SubscriptionPlan {
+  MONTHLY
+  YEARLY
+}
+
