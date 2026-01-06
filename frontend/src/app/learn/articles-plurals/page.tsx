@@ -508,7 +508,7 @@ export default function ArticlesPluralsPage() {
                             <AudioButton
                               kurdishText={example.audioText || example.ku}
                               phoneticText={example.en}
-                              audioFile={example.audioFile}
+                              audioFile={'audioFile' in example ? (example as any).audioFile : undefined}
                               label="Play"
                               size="small"
                               onPlay={handleAudioPlay}

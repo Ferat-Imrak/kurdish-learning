@@ -320,7 +320,7 @@ export default function AchievementsPage() {
           }
           
           // Fetch achievements with progress data
-          const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'
+          const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
           const progressDataStr = encodeURIComponent(JSON.stringify(progressData))
           const response = await fetch(`${API_BASE_URL}/achievements?progressData=${progressDataStr}`, {
             headers: {

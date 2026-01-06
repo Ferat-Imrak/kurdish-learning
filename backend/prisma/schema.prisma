@@ -11,13 +11,15 @@ datasource db {
 }
 
 model User {
-  id           String        @id @default(cuid())
-  email        String        @unique
-  name         String
-  role         UserRole      @default(PARENT)
-  subscriptionPlan SubscriptionPlan? @default(MONTHLY)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id                 String        @id @default(cuid())
+  email              String        @unique
+  name               String
+  passwordHash       String?       // Store hashed password
+  role               UserRole      @default(PARENT)
+  subscriptionPlan   SubscriptionPlan? @default(MONTHLY)
+  subscriptionEndDate DateTime?    // Subscription end date
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
   // Relations
   children     Child[]

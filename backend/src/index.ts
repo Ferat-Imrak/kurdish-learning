@@ -26,9 +26,14 @@ const PORT = process.env.PORT || 5001
 
 // Security middleware
 app.use(helmet())
+// CORS configuration - allow all origins in development for mobile testing
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
+  origin: process.env.NODE_ENV === 'development' 
+    ? true // Allow all origins in development
+    : (process.env.FRONTEND_URL || 'http://localhost:3000'),
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }))
 
 // Rate limiting
@@ -75,11 +80,13 @@ app.use('/api/achievements', achievementRoutes)
 app.use(notFound)
 app.use(errorHandler)
 
-// Start server
-app.listen(PORT, () => {
+// Start server - listen on all interfaces (0.0.0.0) to allow mobile connections
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`)
   console.log(`📚 Kurdish Learning API is ready!`)
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`)
+  console.log(`📱 Mobile access: http://10.0.0.45:${PORT}/api`)
+  console.log(`💻 Local access: http://localhost:${PORT}/api`)
 })
 
 export default app

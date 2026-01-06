@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { motion } from "framer-motion"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Calendar, ArrowLeft, Clock, CalendarDays, RotateCcw, Shuffle, CheckCircle2 } from "lucide-react"
 import AudioButton from "../../../components/lessons/AudioButton"
 import { useProgress } from "../../../contexts/ProgressContext"
@@ -72,6 +72,8 @@ function getCurrentMonthIndex(): number {
 
 export default function MonthsPage() {
   const { updateLessonProgress, getLessonProgress } = useProgress()
+  const startTimeRef = useRef<number>(Date.now())
+  const audioPlaysRef = useRef<number>(0)
   const [mode, setMode] = useState<'learn' | 'practice'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('months-mode')
@@ -93,6 +95,19 @@ export default function MonthsPage() {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS')
     }
   }, [getLessonProgress, updateLessonProgress])
+
+  const calculateProgress = () => {
+    const timeSpent = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60) // minutes
+    // Audio clicks: max 50% (10 clicks = 50%)
+    const audioProgress = Math.min(50, audioPlaysRef.current * 5)
+    // Time spent: max 50% (5 minutes = 50%)
+    const timeProgress = Math.min(50, timeSpent * 10)
+    const progress = Math.min(100, audioProgress + timeProgress)
+    
+    // Mark as completed if progress >= 80%
+    const status: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' = progress >= 80 ? 'COMPLETED' : 'IN_PROGRESS'
+    return { progress, status }
+  }
   
   const [practiceGame, setPracticeGame] = useState<'order' | 'matching'>('order')
   

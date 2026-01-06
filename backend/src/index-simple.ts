@@ -7,6 +7,9 @@ import cookieParser from 'cookie-parser'
 import rateLimit from 'express-rate-limit'
 import dotenv from 'dotenv'
 
+// Import routes
+import authRoutes from './routes/auth'
+
 dotenv.config()
 
 const app = express()
@@ -14,16 +17,27 @@ const PORT = process.env.PORT || 5002
 
 // Security middleware
 app.use(helmet())
+// CORS configuration - allow all origins in development for mobile testing
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
+  origin: process.env.NODE_ENV === 'development' 
+    ? true // Allow all origins in development
+    : (process.env.FRONTEND_URL || 'http://localhost:3000'),
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }))
 
-// Rate limiting
+// Rate limiting - more lenient in development
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
+  max: process.env.NODE_ENV === 'development' ? 1000 : 100, // Higher limit in dev for mobile testing
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health' || req.path === '/api/health'
+  }
 })
 app.use(limiter)
 
@@ -50,6 +64,9 @@ app.get('/health', (req, res) => {
     environment: process.env.NODE_ENV || 'development'
   })
 })
+
+// API routes
+app.use('/api/auth', authRoutes)
 
 // Simple API routes for testing
 app.get('/api/lessons', (req, res) => {
@@ -121,11 +138,13 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   })
 })
 
-// Start server
-app.listen(PORT, () => {
+// Start server - listen on all interfaces (0.0.0.0) to allow mobile connections
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`)
   console.log(`📚 Kurdish Learning API is ready!`)
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`)
+  console.log(`📱 Mobile access: http://10.0.0.45:${PORT}/api`)
+  console.log(`💻 Local access: http://localhost:${PORT}/api`)
 })
 
 export default app

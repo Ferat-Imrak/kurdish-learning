@@ -16,37 +16,46 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null
         
-        // Try to find user by username first, then by email
-        let user = await prisma.user.findUnique({ 
-          where: { username: credentials.email },
-          select: { id: true, email: true, passwordHash: true, subscriptionStatus: true, subscriptionEndDate: true }
-        })
-        if (!user) {
+        // credentials.email can be either username or email
+        const input = credentials.email.trim()
+        const isEmail = input.includes('@')
+        
+        // Try to find user by username or email
+        let user = null
+        if (isEmail) {
           user = await prisma.user.findUnique({ 
-            where: { email: credentials.email },
-            select: { id: true, email: true, passwordHash: true, subscriptionStatus: true, subscriptionEndDate: true }
+            where: { email: input },
+            select: { id: true, email: true, passwordHash: true, subscriptionEndDate: true }
           })
+        } else {
+          // Try username first
+          user = await prisma.user.findUnique({ 
+            where: { username: input },
+            select: { id: true, email: true, passwordHash: true, subscriptionEndDate: true }
+          })
+          // If not found by username, try email (in case username looks like email)
+          if (!user) {
+            user = await prisma.user.findUnique({ 
+              where: { email: input },
+              select: { id: true, email: true, passwordHash: true, subscriptionEndDate: true }
+            })
+          }
         }
         
         if (!user?.passwordHash) return null
         const isValid = await bcrypt.compare(credentials.password, user.passwordHash)
         if (!isValid) return null
         
-        // Check subscription status
-        let subscriptionStatus = user.subscriptionStatus || 'ACTIVE'
+        // Check subscription status based on end date only (subscriptionStatus field doesn't exist in backend)
         const now = new Date()
-        if (user.subscriptionEndDate && now > user.subscriptionEndDate) {
-          // If past end date, mark as expired regardless of status
-          subscriptionStatus = 'EXPIRED'
-        } else if (user.subscriptionStatus === 'CANCELED' && user.subscriptionEndDate && now > user.subscriptionEndDate) {
-          // CANCELED past end date should be EXPIRED
-          subscriptionStatus = 'EXPIRED'
+        if (user.subscriptionEndDate) {
+          const endDate = new Date(user.subscriptionEndDate)
+          // If past end date, subscription is expired
+          if (now > endDate) {
+            throw new Error('SUBSCRIPTION_EXPIRED')
+          }
         }
-        
-        // Block login if subscription is expired
-        if (subscriptionStatus === 'EXPIRED') {
-          throw new Error('SUBSCRIPTION_EXPIRED')
-        }
+        // If no end date set, allow login (for backwards compatibility)
         
         // Don't return image here - it will be fetched from DB in session callback
         return { id: user.id, email: user.email || undefined }
@@ -77,7 +86,6 @@ export const authOptions: NextAuthOptions = {
               email: true, 
               image: true, 
               subscriptionPlan: true,
-              subscriptionStatus: true,
               subscriptionEndDate: true
             }
           })

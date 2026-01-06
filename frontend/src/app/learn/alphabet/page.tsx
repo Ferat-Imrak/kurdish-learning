@@ -96,7 +96,8 @@ export default function AlphabetPage() {
   const handleAudioPlay = () => {
     const progress = getLessonProgress(LESSON_ID)
     const newProgress = Math.min(100, progress.progress + 2)
-    updateLessonProgress(LESSON_ID, newProgress, 'IN_PROGRESS')
+    const newStatus = newProgress >= 100 ? 'COMPLETED' : 'IN_PROGRESS'
+    updateLessonProgress(LESSON_ID, newProgress, newStatus)
   }
 
   return (

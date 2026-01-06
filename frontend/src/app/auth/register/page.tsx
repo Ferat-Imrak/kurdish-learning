@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Eye, EyeOff, Mail, Lock, User, Sparkles, CheckCircle, Star, XCircle } from 'lucide-react'
 
 export default function RegisterPage() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const [formData, setFormData] = useState({
     name: '',
     username: '',
@@ -69,7 +70,7 @@ export default function RegisterPage() {
     e.preventDefault()
     
     // Reset validation errors and submit error
-    setValidationErrors({ email: '', password: '', confirmPassword: '' })
+    setValidationErrors({ username: '', email: '', password: '', confirmPassword: '' })
     setSubmitError(null)
     
     // Validate email
@@ -93,20 +94,21 @@ export default function RegisterPage() {
     setIsLoading(true)
     
     try {
-      const res = await fetch('/api/register', {
+      // Use backend API directly (not Next.js API route for static export)
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+      const res = await fetch(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          name: formData.name, 
-          username: formData.username,
+          name: formData.username || formData.name, // Backend expects 'name' field
           email: formData.email, 
           password: formData.password,
-          plan: selectedPlan
+          plan: selectedPlan // Will be handled by backend
         }),
       })
       if (!res.ok) {
         const msg = await res.json().catch(() => ({}))
-        throw new Error(msg?.error || 'Failed to register')
+        throw new Error(msg?.error || msg?.message || 'Failed to register')
       }
       router.push('/auth/login')
     } catch (error: any) {

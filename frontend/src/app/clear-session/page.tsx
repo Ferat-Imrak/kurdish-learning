@@ -9,6 +9,7 @@ export default function ClearSessionPage() {
   const router = useRouter()
   const [clearing, setClearing] = useState(true)
   const [success, setSuccess] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const clearCookies = async () => {

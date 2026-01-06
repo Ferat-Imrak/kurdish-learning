@@ -241,7 +241,8 @@ export default function GamesPage() {
     matching: false,
     wordBuilder: false,
     pictureQuiz: false,
-    memoryCards: false
+    memoryCards: false,
+    sentenceBuilder: false
   })
   
   useEffect(() => {

@@ -1,0 +1,12 @@
+# Copy this file to terraform.tfvars and fill in your values
+# DO NOT commit terraform.tfvars to git (it's in .gitignore)
+
+project_name = "peyvi"
+aws_region   = "us-east-1"
+
+# Database credentials
+database_password = "your-secure-password-here"
+
+# Domain (optional for dev)
+domain_name = ""
+

@@ -487,7 +487,7 @@ export default function BasicAdjectivesPage() {
             {presentTenseExamples.map((section, sectionIndex) => (
               <motion.div
                 key={sectionIndex}
-                ref={(el) => (sectionRefs.current[sectionIndex] = el)}
+                ref={(el) => { sectionRefs.current[sectionIndex] = el }}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 + sectionIndex * 0.1 }}

@@ -29,6 +29,8 @@ model User {
 
   accounts          Account[]
   sessions          Session[]
+
+  @@map("users")
 }
 
 enum SubscriptionPlan {

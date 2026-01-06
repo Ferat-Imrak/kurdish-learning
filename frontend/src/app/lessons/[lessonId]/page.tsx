@@ -1337,7 +1337,7 @@ export default function LessonDetailPage() {
                           )}
                         </div>
                         {item.audio !== false && (
-                          <AudioButton kurdishText={item.ku} onPlay={() => handleAudioPlay(item.ku || `item-${index}`)} />
+                          <AudioButton kurdishText={item.ku} onPlay={() => handleAudioPlay(item.ku || `item-${idx}`)} />
                         )}
                       </div>
                     ))}

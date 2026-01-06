@@ -10,19 +10,14 @@ import {
   Volume2, Sparkles, Heart, Globe, Award, Clock,
   ArrowRight, CheckCircle, Zap, Target, BookMarked
 } from 'lucide-react'
-import { useIsMobile } from '../hooks/useIsMobile'
-import MobileLanding from '../components/MobileLanding'
-
 export default function HomePage() {
-  const isMobile = useIsMobile()
-  const [selectedLanguage, setSelectedLanguage] = useState<'kurmanji' | 'sorani' | null>(null)
 
   // Structured Data for SEO
   const structuredData = {
     '@context': 'https://schema.org',
     '@type': 'EducationalOrganization',
     name: 'Peyvi Kurdish Learning',
-    description: 'Interactive Kurdish language learning platform with lessons, games, and stories for Kurmanji and Sorani dialects',
+    description: 'Interactive Kurdish language learning platform with lessons, games, and stories',
     url: process.env.NEXT_PUBLIC_APP_URL || 'https://kurdishlearning.app',
     logo: `${process.env.NEXT_PUBLIC_APP_URL || 'https://kurdishlearning.app'}/peyvi-logo.png`,
     offers: {
@@ -43,7 +38,7 @@ export default function HomePage() {
     '@context': 'https://schema.org',
     '@type': 'Course',
     name: 'Kurdish Language Learning Course',
-    description: 'Comprehensive Kurdish language course covering Kurmanji and Sorani dialects with interactive lessons, games, and cultural content',
+    description: 'Comprehensive Kurdish language course with interactive lessons, games, and cultural content',
     provider: {
       '@type': 'Organization',
       name: 'Peyvi',
@@ -57,8 +52,6 @@ export default function HomePage() {
       'Kurdish Vocabulary',
       'Kurdish Pronunciation',
       'Kurdish Culture',
-      'Kurmanji Dialect',
-      'Sorani Dialect'
     ],
     inLanguage: ['ku', 'en'],
   }
@@ -107,26 +100,6 @@ export default function HomePage() {
     { icon: BookOpen, label: 'Lessons Completed', value: '25,000+', color: 'text-brand-green' },
     { icon: Award, label: 'Success Rate', value: '94%', color: 'text-supportLavender' },
   ]
-
-  // Render mobile landing on mobile devices
-  if (isMobile) {
-    return (
-      <>
-        {/* Structured Data for SEO */}
-        <Script
-          id="organization-structured-data"
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
-        />
-        <Script
-          id="course-structured-data"
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(courseStructuredData) }}
-        />
-        <MobileLanding />
-      </>
-    )
-  }
 
   return (
     <>
@@ -463,7 +436,7 @@ export default function HomePage() {
           {[{
             q: 'Do you offer a free trial?', a: 'Yes. Start with a free trial to explore all lessons and games. Choose a plan to continue learning and save your progress.'
           },{
-            q: 'Which dialects are covered?', a: 'The app currently focuses on Kurdish (Kurmanji). More content will be added over time.'
+            q: 'What content is available?', a: 'The app offers comprehensive Kurdish language lessons, games, and stories. More content is added regularly.'
           },{
             q: 'Does it work on phones and tablets?', a: 'Yes. It\'s a PWA and works on desktop, tablet, and mobile.'
           },{

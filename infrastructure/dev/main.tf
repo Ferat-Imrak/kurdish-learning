@@ -1,0 +1,156 @@
+# Development Environment - Cost-optimized infrastructure
+terraform {
+  required_version = ">= 1.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+
+  # Configure backend after manually creating S3 bucket and DynamoDB table
+  # Replace ACCOUNT_ID with your AWS account ID
+  backend "s3" {
+    bucket         = "peyvi-dev-terraform-state-634347876978"
+    key            = "dev/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "peyvi-dev-terraform-state-lock"
+    encrypt        = true
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+
+  default_tags {
+    tags = {
+      Environment = "dev"
+      Project     = var.project_name
+      ManagedBy   = "terraform"
+    }
+  }
+}
+
+# Get AWS Account ID
+data "aws_caller_identity" "current" {}
+
+# Get Availability Zones
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+# Terraform State Backend (must be created first)
+module "terraform_state" {
+  source = "../modules/terraform-state"
+
+  project_name   = var.project_name
+  environment    = "dev"
+  aws_account_id = data.aws_caller_identity.current.account_id
+}
+
+# VPC Module
+module "vpc" {
+  source = "../modules/vpc"
+
+  project_name         = var.project_name
+  environment          = "dev"
+  vpc_cidr             = var.vpc_cidr
+  public_subnet_cidrs  = var.public_subnet_cidrs
+  private_subnet_cidrs = var.private_subnet_cidrs
+  availability_zones   = slice(data.aws_availability_zones.available.names, 0, 2)
+  enable_nat_gateway    = false # Disable NAT to save costs in dev
+}
+
+# Security Group for Application
+resource "aws_security_group" "app" {
+  name        = "${var.project_name}-dev-app-sg"
+  description = "Security group for application servers"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    description = "HTTP from ALB"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+  }
+
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.project_name}-dev-app-sg"
+  }
+}
+
+# RDS Module
+module "rds" {
+  source = "../modules/rds"
+
+  project_name           = var.project_name
+  environment            = "dev"
+  vpc_id                 = module.vpc.vpc_id
+  subnet_ids             = module.vpc.private_subnet_ids
+  app_security_group_id  = aws_security_group.app.id
+  database_name          = var.database_name
+  database_username      = var.database_username
+  database_password      = var.database_password
+  instance_class         = "db.t3.micro" # Smallest instance for dev
+  allocated_storage      = 20
+  max_allocated_storage  = 50
+  backup_retention_period = 3 # Shorter retention for dev
+}
+
+# S3 + CloudFront Module
+module "frontend" {
+  source = "../modules/s3-cloudfront"
+
+  project_name   = var.project_name
+  environment    = "dev"
+  aws_account_id = data.aws_caller_identity.current.account_id
+  domain_name    = "" # No custom domain for dev
+  price_class    = "PriceClass_100"
+}
+
+# Secrets Manager for sensitive data
+resource "aws_secretsmanager_secret" "database" {
+  name        = "${var.project_name}/dev/database"
+  description = "Database credentials for dev environment"
+
+  tags = {
+    Name = "${var.project_name}-dev-db-secret"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "database" {
+  secret_id = aws_secretsmanager_secret.database.id
+  secret_string = jsonencode({
+    username = var.database_username
+    password = var.database_password
+    host     = module.rds.db_instance_address
+    port     = module.rds.db_instance_port
+    database = var.database_name
+  })
+}
+
+# SES Configuration (for email)
+resource "aws_ses_email_identity" "noreply" {
+  email = "noreply@${var.domain_name != "" ? var.domain_name : "peyvi.com"}"
+}
+
+# CloudWatch Log Group
+resource "aws_cloudwatch_log_group" "app" {
+  name              = "/aws/${var.project_name}/dev/app"
+  retention_in_days = 7 # Shorter retention for dev
+
+  tags = {
+    Name = "${var.project_name}-dev-app-logs"
+  }
+}
+

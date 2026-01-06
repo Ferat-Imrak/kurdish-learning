@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Play, Star, Trophy, Clock, BookOpen, Sparkles, Target, Zap, ArrowRight, Lock, CheckCircle2 } from 'lucide-react'
@@ -15,7 +15,21 @@ interface Lesson {
 
 export default function LearnPage() {
   const [selectedLanguage] = useState<'kurmanji' | 'sorani'>('kurmanji')
-  const { getLessonProgress } = useProgress()
+  const { getLessonProgress, lessonProgress } = useProgress()
+  const [, setRefresh] = useState(0)
+
+  // Listen for progress updates to refresh the page
+  useEffect(() => {
+    const handleProgressUpdate = () => {
+      setRefresh(prev => prev + 1)
+    }
+    
+    window.addEventListener('lessonProgressUpdated', handleProgressUpdate)
+    
+    return () => {
+      window.removeEventListener('lessonProgressUpdated', handleProgressUpdate)
+    }
+  }, [])
   
   const lessons: Lesson[] = [
     {
@@ -241,12 +255,16 @@ export default function LearnPage() {
     // First lesson is always unlocked
     if (lessonIndex === 0) return false
     
-    // Check if previous lesson is completed (100% progress and COMPLETED status)
+    // Check if previous lesson is completed
     const previousLesson = lessons[lessonIndex - 1]
     const previousProgress = getLessonProgress(previousLesson.id)
     
+    // Lesson is unlocked if previous lesson has 100% progress
+    // (Status should be COMPLETED, but we also unlock at 100% progress as fallback)
+    const isUnlocked = previousProgress.progress === 100
+    
     // Lesson is locked if previous lesson is not 100% completed
-    return !(previousProgress.progress === 100 && previousProgress.status === 'COMPLETED')
+    return !isUnlocked
   }
 
   // Check if lesson is completed

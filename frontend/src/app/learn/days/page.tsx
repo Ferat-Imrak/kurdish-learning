@@ -102,7 +102,7 @@ export default function DaysPage() {
     const progress = Math.min(100, audioProgress + timeProgress)
     
     // Mark as completed if progress >= 80%
-    const status = progress >= 80 ? 'COMPLETED' : 'IN_PROGRESS'
+    const status: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' = progress >= 80 ? 'COMPLETED' : 'IN_PROGRESS'
     return { progress, status }
   }
   

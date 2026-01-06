@@ -216,8 +216,11 @@ export default function GrammarPage({ params }: { params: { dialect: string } })
   } = useLessonTracking({
     lessonId,
     totalSections: grammarSections.length, // Will automatically include new sections
-    minTimePerSection: 15, // 15 seconds minimum
-    minInteractionsPerSection: 2 // at least 2 interactions (audio plays)
+    defaultRequirements: {
+      minTime: 15, // 15 seconds minimum
+      minInteractions: 2, // at least 2 interactions (audio plays)
+      minUniqueInteractions: 2
+    }
   })
 
   const toggleSection = (sectionId: string) => {
@@ -367,9 +370,9 @@ export default function GrammarPage({ params }: { params: { dialect: string } })
                                       </div>
                                       
                                       {/* Gender label for nouns */}
-                                      {example.gender && (
+                                      {'gender' in example && (example as any).gender && (
                                         <div className="text-xs text-gray-500 mt-1">
-                                          {example.gender}
+                                          {(example as any).gender}
                                         </div>
                                       )}
                                     </div>
@@ -377,7 +380,7 @@ export default function GrammarPage({ params }: { params: { dialect: string } })
                                       <AudioButton 
                                         kurdishText={example.ku} 
                                         phoneticText={example.en} 
-                                        audioFile={example.audioFile}
+                                        audioFile={'audioFile' in example ? (example as any).audioFile : undefined}
                                         label="Play" 
                                         size="small"
                                         onPlay={() => recordInteraction(section.id)}

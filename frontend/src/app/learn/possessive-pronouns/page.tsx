@@ -260,6 +260,19 @@ export default function PossessivePronounsPage() {
     }
   }, [getLessonProgress, updateLessonProgress])
 
+  const calculateProgress = (practiceScorePercent: number) => {
+    const timeSpent = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60) // minutes
+    // Audio clicks: max 30% (10 clicks = 30%)
+    const audioProgress = Math.min(30, audioPlaysRef.current * 3)
+    // Time spent: max 20% (5 minutes = 20%)
+    const timeProgress = Math.min(20, timeSpent * 4)
+    // Practice score: max 50%
+    const practiceProgress = practiceScorePercent * 0.5
+    // Combined progress
+    const progress = Math.min(100, audioProgress + timeProgress + practiceProgress)
+    return progress
+  }
+
   const handleAudioPlay = () => {
     audioPlaysRef.current += 1
     const timeSpent = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60) // minutes
@@ -522,7 +535,7 @@ export default function PossessivePronounsPage() {
                             <AudioButton
                               kurdishText={example.audioText || example.ku}
                               phoneticText={example.en}
-                              audioFile={example.audioFile}
+                              audioFile={'audioFile' in example ? (example as any).audioFile : undefined}
                               label="Play"
                               size="small"
                               onPlay={handleAudioPlay}

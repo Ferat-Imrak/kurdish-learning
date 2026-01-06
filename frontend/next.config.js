@@ -3,19 +3,26 @@ const withPWA = require('next-pwa')({
   dest: 'public',
   register: true,
   skipWaiting: true,
-  disable: process.env.NODE_ENV === 'development'
+  disable: process.env.NODE_ENV === 'development',
+  fallbacks: {
+    document: '/offline'
+  }
 })
 
 const nextConfig = {
-  // Enable static export only for mobile builds
-  ...(process.env.MOBILE_BUILD === 'true' && {
-    output: 'export',
-    images: {
-      unoptimized: true,
-    },
-  }),
   images: {
     domains: ['localhost', 'supabase.co'],
+  },
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+      }
+    }
+    return config
   },
 }
 

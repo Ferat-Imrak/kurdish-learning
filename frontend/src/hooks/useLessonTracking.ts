@@ -54,16 +54,18 @@ export function useLessonTracking({
 
   // Load saved interactions from localStorage
   useEffect(() => {
-    const currentProgress = getLessonProgress(lessonId)
-    if (currentProgress.score) {
-      try {
-        const saved = JSON.parse(currentProgress.score.toString())
+    if (typeof window === 'undefined') return
+    
+    try {
+      const savedData = localStorage.getItem(`lessonInteractions_${lessonId}`)
+      if (savedData) {
+        const saved = JSON.parse(savedData)
         if (Array.isArray(saved)) {
           const interactionsMap = new Map<string, SectionInteraction>()
           saved.forEach((item: any) => {
             // Convert uniqueInteractions array back to Set
-            const uniqueInteractions = item.uniqueInteractions 
-              ? new Set(Array.isArray(item.uniqueInteractions) ? item.uniqueInteractions : [])
+            const uniqueInteractions: Set<string> = item.uniqueInteractions 
+              ? new Set(Array.isArray(item.uniqueInteractions) ? item.uniqueInteractions.filter((x: any): x is string => typeof x === 'string') : [])
               : new Set<string>()
             
             const requirements = sectionRequirements[item.sectionId] || defaultRequirements
@@ -90,12 +92,13 @@ export function useLessonTracking({
           })
           setSectionInteractions(interactionsMap)
         }
-      } catch (e) {
-        // Ignore parse errors
       }
+    } catch (e) {
+      // Ignore parse errors
     }
 
     // Mark lesson as started
+    const currentProgress = getLessonProgress(lessonId)
     if (currentProgress.status === 'NOT_STARTED') {
       updateLessonProgress(lessonId, 0, 'IN_PROGRESS')
     }
@@ -277,11 +280,19 @@ export function useLessonTracking({
       uniqueInteractions: Array.from(s.uniqueInteractions)
     }))
     
+    // Store interactions in localStorage with a specific key
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(`lessonInteractions_${lessonId}`, JSON.stringify(interactionsArray))
+      } catch (e) {
+        // Ignore storage errors
+      }
+    }
+    
     updateLessonProgress(
       lessonId,
       progressPercentage,
-      status,
-      JSON.stringify(interactionsArray)
+      status
     )
   }, [sectionInteractions, totalSections, lessonId, updateLessonProgress])
 

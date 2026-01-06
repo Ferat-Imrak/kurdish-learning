@@ -1062,7 +1062,6 @@ export default function DailyConversationsPage() {
                   phoneticText={conversation.pronunciation}
                   label="Listen"
                   size="medium"
-                  category="conversations"
                 />
               </div>
             </motion.div>

@@ -643,7 +643,7 @@ export default function FlashcardsPage() {
     
     // Track that this review card has been flipped
     if (newFlipped) {
-      setReviewCardsFlipped(prev => new Set([...prev, reviewCardIndex]))
+      setReviewCardsFlipped(prev => new Set([...Array.from(prev), reviewCardIndex]))
     }
   }
 
@@ -832,7 +832,7 @@ export default function FlashcardsPage() {
     if (markedCards[currentCardIndex]) return
     
     // Mark current card as correct
-    const newMarkedCards = { ...markedCards, [currentCardIndex]: 'correct' }
+    const newMarkedCards: Record<number, 'correct' | 'incorrect'> = { ...markedCards, [currentCardIndex]: 'correct' }
     setMarkedCards(newMarkedCards)
     setCorrectCount(c => c + 1)
   }
@@ -844,7 +844,7 @@ export default function FlashcardsPage() {
     if (markedCards[currentCardIndex]) return
     
     // Mark current card as incorrect and add to review list
-    const newMarkedCards = { ...markedCards, [currentCardIndex]: 'incorrect' }
+    const newMarkedCards: Record<number, 'correct' | 'incorrect'> = { ...markedCards, [currentCardIndex]: 'incorrect' }
     setMarkedCards(newMarkedCards)
     setIncorrectCount(c => c + 1)
     

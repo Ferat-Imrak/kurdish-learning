@@ -1841,7 +1841,7 @@ export default function SentenceBuilderPage() {
     
     if (correct) {
       setScore(score + 1)
-      setCompletedSentences(new Set([...completedSentences, currentSentence.id]))
+      setCompletedSentences(new Set([...Array.from(completedSentences), currentSentence.id]))
       
       // Save progress
       if (selectedDeck) {
