@@ -88,17 +88,20 @@ export default function LearnScreen() {
   }, [progressStats]);
 
   // Check if lesson is locked
+  // TEMPORARILY DISABLED - All lessons unlocked for testing
+  // TODO: Re-enable locking later
   const isLessonLocked = (lessonIndex: number): boolean => {
-    if (lessonIndex === 0) return false;
-    
-    const previousLesson = LESSONS[lessonIndex - 1];
-    const previousProgress = getLessonProgress(previousLesson.id);
-    
-    // Lesson is unlocked if previous lesson has 100% progress
-    // (Status should be COMPLETED, but we also unlock at 100% progress as fallback)
-    const isUnlocked = previousProgress.progress === 100;
-    
-    return !isUnlocked;
+    // if (lessonIndex === 0) return false;
+    // 
+    // const previousLesson = LESSONS[lessonIndex - 1];
+    // const previousProgress = getLessonProgress(previousLesson.id);
+    // 
+    // // Lesson is unlocked if previous lesson has 100% progress
+    // // (Status should be COMPLETED, but we also unlock at 100% progress as fallback)
+    // const isUnlocked = previousProgress.progress === 100;
+    // 
+    // return !isUnlocked;
+    return false; // All lessons unlocked temporarily
   };
 
   // Check if lesson is completed

@@ -285,15 +285,21 @@ export default function DaysPage() {
   const progress = getLessonProgress(LESSON_ID);
   const currentDayIndex = getCurrentDayIndex();
 
-  const renderDay = ({ item }: { item: DayItem }) => {
+  const renderDay = ({ item, index }: { item: DayItem; index: number }) => {
     const audioFile = getDayAudioFile(item.ku);
+    const padding = 12 * 2; // listContent padding on both sides
+    const cardMargin = 6; // DayCard has margin: 6 on all sides
+    const gap = cardMargin * 2; // gap between items (margin on each side)
+    const cardWidth = (width - padding - gap) / 2;
     return (
-      <DayCard
-        day={item}
-        audioFile={audioFile}
-        audioAssets={audioAssets}
-        onPlay={handleAudioPlay}
-      />
+      <View style={{ width: cardWidth }}>
+        <DayCard
+          day={item}
+          audioFile={audioFile}
+          audioAssets={audioAssets}
+          onPlay={handleAudioPlay}
+        />
+      </View>
     );
   };
 
@@ -387,25 +393,26 @@ export default function DaysPage() {
 
       {/* Practice Mode - Game Selector Tabs */}
       {mode === 'practice' && (
-        <View style={styles.gameSelector}>
+        <View style={styles.segmentedControl}>
           <Pressable
             onPress={() => setPracticeGame('order')}
             style={({ pressed }) => [
-              styles.gameSelectorButton,
-              practiceGame === 'order' && styles.gameSelectorButtonActive,
+              styles.segmentedButton,
+              styles.segmentedButtonLeft,
+              practiceGame === 'order' && styles.segmentedButtonActive,
               pressed && styles.pressed,
             ]}
           >
             <Ionicons
               name="shuffle"
               size={16}
-              color={practiceGame === 'order' ? '#ffffff' : '#3A86FF'}
-              style={{ marginRight: 6 }}
+              color={practiceGame === 'order' ? '#ffffff' : '#4b5563'}
+              style={{ width: 16, height: 16, marginRight: 6 }}
             />
             <Text
               style={[
-                styles.gameSelectorText,
-                practiceGame === 'order' && styles.gameSelectorTextActive,
+                styles.segmentedButtonText,
+                practiceGame === 'order' && styles.segmentedButtonTextActive,
               ]}
             >
               Day Order
@@ -414,21 +421,22 @@ export default function DaysPage() {
           <Pressable
             onPress={() => setPracticeGame('matching')}
             style={({ pressed }) => [
-              styles.gameSelectorButton,
-              practiceGame === 'matching' && styles.gameSelectorButtonActive,
+              styles.segmentedButton,
+              styles.segmentedButtonRight,
+              practiceGame === 'matching' && styles.segmentedButtonActive,
               pressed && styles.pressed,
             ]}
           >
             <Ionicons
               name="shuffle"
               size={16}
-              color={practiceGame === 'matching' ? '#ffffff' : '#3A86FF'}
-              style={{ marginRight: 6 }}
+              color={practiceGame === 'matching' ? '#ffffff' : '#4b5563'}
+              style={{ width: 16, height: 16, marginRight: 6 }}
             />
             <Text
               style={[
-                styles.gameSelectorText,
-                practiceGame === 'matching' && styles.gameSelectorTextActive,
+                styles.segmentedButtonText,
+                practiceGame === 'matching' && styles.segmentedButtonTextActive,
               ]}
             >
               Matching
@@ -462,12 +470,18 @@ export default function DaysPage() {
                     numColumns={2}
                     scrollEnabled={false}
                     keyExtractor={(item) => item.ku}
-                    renderItem={({ item: day }) => {
+                    renderItem={({ item: day, index }) => {
                       const isToday = day.order === currentDayIndex;
+                      const padding = 16 * 2; // padding on both sides
+                      const gap = 8; // gap between items
+                      const cardWidth = (width - padding - gap) / 2;
+                      const isLastInRow = index % 2 === 1; // odd indices are last in row
                       return (
                         <View
                           style={[
                             styles.calendarDay,
+                            { width: cardWidth },
+                            !isLastInRow && styles.calendarDayMarginRight,
                             isToday && styles.calendarDayToday,
                           ]}
                         >
@@ -489,7 +503,7 @@ export default function DaysPage() {
                             ]}
                             numberOfLines={2}
                             adjustsFontSizeToFit={true}
-                            minimumFontScale={0.7}
+                            minimumFontScale={0.85}
                           >
                             {day.ku.charAt(0).toUpperCase() + day.ku.slice(1)}
                           </Text>
@@ -665,48 +679,61 @@ export default function DaysPage() {
                   </View>
                 </View>
 
-                <View style={styles.shuffledDaysGrid}>
-                  {shuffledDays.map((day) => {
+                <FlatList
+                  data={shuffledDays}
+                  numColumns={2}
+                  scrollEnabled={false}
+                  keyExtractor={(item) => item.ku}
+                  renderItem={({ item: day, index }) => {
                     const isSelected = selectedOrder.includes(day.ku);
+                    const containerPadding = 20 * 2; // practiceContainer padding on both sides
+                    const cardPadding = 16 * 2; // practiceCard padding on both sides
+                    const gap = 12; // gap between items
+                    const cardWidth = (width - containerPadding - cardPadding - gap) / 2;
                     return (
-                      <Pressable
-                        key={day.ku}
-                        onPress={() => handleDaySelect(day.ku)}
-                        style={[
-                          styles.shuffledDayButton,
-                          isSelected && styles.shuffledDayButtonSelected,
-                        ]}
-                      >
-                        <Text
+                      <View style={[{ width: cardWidth, flexShrink: 0, flexGrow: 0 }, index % 2 === 0 && styles.shuffledDayButtonWrapperMarginRight]}>
+                        <Pressable
+                          onPress={() => handleDaySelect(day.ku)}
                           style={[
-                            styles.shuffledDayText,
-                            isSelected && styles.shuffledDayTextSelected,
+                            styles.shuffledDayButton,
+                            isSelected && styles.shuffledDayButtonSelected,
                           ]}
                         >
-                          {day.ku.charAt(0).toUpperCase() + day.ku.slice(1)}
-                        </Text>
-                      </Pressable>
+                          <Text
+                            style={[
+                              styles.shuffledDayText,
+                              isSelected && styles.shuffledDayTextSelected,
+                            ]}
+                          >
+                            {day.ku.charAt(0).toUpperCase() + day.ku.slice(1)}
+                          </Text>
+                        </Pressable>
+                      </View>
                     );
-                  })}
-                </View>
+                  }}
+                  columnWrapperStyle={styles.shuffledDaysRow}
+                  contentContainerStyle={styles.shuffledDaysGrid}
+                />
 
-                <Pressable
-                  onPress={checkDayOrder}
-                  disabled={selectedOrder.length !== 7}
-                  style={[
-                    styles.checkButton,
-                    selectedOrder.length !== 7 && styles.checkButtonDisabled,
-                  ]}
-                >
-                  <Text
+                <View style={styles.checkButtonContainer}>
+                  <Pressable
+                    onPress={checkDayOrder}
+                    disabled={selectedOrder.length !== 7}
                     style={[
-                      styles.checkButtonText,
-                      selectedOrder.length !== 7 && styles.checkButtonTextDisabled,
+                      styles.checkButton,
+                      selectedOrder.length !== 7 && styles.checkButtonDisabled,
                     ]}
                   >
-                    Check Order
-                  </Text>
-                </Pressable>
+                    <Text
+                      style={[
+                        styles.checkButtonText,
+                        selectedOrder.length !== 7 && styles.checkButtonTextDisabled,
+                      ]}
+                    >
+                      Check Order
+                    </Text>
+                  </Pressable>
+                </View>
 
                 {orderFeedback !== null && !orderCompleted && (
                   <View style={styles.feedbackContainer}>
@@ -864,10 +891,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 12,
-    backgroundColor: '#f9fafb',
     borderRadius: 12,
     marginHorizontal: 20,
-    marginTop: 12,
     marginBottom: 12,
   },
   progressInfoText: {
@@ -892,76 +917,54 @@ const styles = StyleSheet.create({
   },
   segmentedControl: {
     flexDirection: 'row',
-    marginHorizontal: 20,
-    marginBottom: 12,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#f3f4f6',
     borderRadius: 12,
     padding: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    marginHorizontal: 20,
+    marginBottom: 12,
   },
   segmentedButton: {
     flex: 1,
-    paddingVertical: 12,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 0,
     borderRadius: 8,
-  },
-  segmentedButtonLeft: {
-    marginRight: 4,
-  },
-  segmentedButtonRight: {
-    marginLeft: 4,
-  },
-  segmentedButtonActive: {
-    backgroundColor: '#3A86FF',
-  },
-  segmentedButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#6b7280',
-  },
-  segmentedButtonTextActive: {
-    color: '#ffffff',
-  },
-  gameSelector: {
-    flexDirection: 'row',
-    marginHorizontal: 20,
-    marginBottom: 12,
-    gap: 8,
-  },
-  gameSelectorButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#e5e7eb',
   },
-  gameSelectorButtonActive: {
+  segmentedButtonLeft: {
+    marginRight: 1,
+  },
+  segmentedButtonRight: {
+    marginLeft: 1,
+  },
+  segmentedButtonActive: {
     backgroundColor: '#3A86FF',
     borderColor: '#3A86FF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  gameSelectorText: {
-    fontSize: 14,
+  segmentedButtonText: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#3A86FF',
+    color: '#4b5563',
+    textAlign: 'center',
   },
-  gameSelectorTextActive: {
+  segmentedButtonTextActive: {
     color: '#ffffff',
+    fontWeight: '700',
   },
   listContent: {
     padding: 12,
   },
   row: {
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
   },
   section: {
     marginTop: 24,
@@ -980,27 +983,29 @@ const styles = StyleSheet.create({
     color: '#111827',
   },
   calendarContainer: {
-    paddingHorizontal: 4,
+    paddingHorizontal: 16,
   },
   calendarListContent: {
     padding: 0,
   },
   calendarRow: {
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     marginBottom: 8,
   },
   calendarDay: {
-    width: ((width - 48 - 8) / 2),
     flexShrink: 0,
     flexGrow: 0,
     backgroundColor: '#f9fafb',
     borderRadius: 12,
-    padding: 10,
+    padding: 12,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#e5e7eb',
-    height: 90,
+    height: 100,
+  },
+  calendarDayMarginRight: {
+    marginRight: 8,
   },
   calendarDayToday: {
     backgroundColor: '#3A86FF',
@@ -1010,15 +1015,15 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     color: '#6b7280',
-    marginBottom: 6,
+    marginBottom: 8,
     textAlign: 'center',
   },
   calendarDayKurdish: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
     color: '#111827',
     textAlign: 'center',
-    lineHeight: 16,
+    lineHeight: 18,
   },
   calendarDayTextToday: {
     color: '#ffffff',
@@ -1046,18 +1051,20 @@ const styles = StyleSheet.create({
   practiceCard: {
     backgroundColor: '#ffffff',
     borderRadius: 16,
-    padding: 20,
+    padding: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 3,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
   practiceHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   practiceHeaderLeft: {
     flexDirection: 'row',
@@ -1094,7 +1101,7 @@ const styles = StyleSheet.create({
     color: '#3A86FF',
   },
   selectedOrderContainer: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   selectedOrderLabel: {
     fontSize: 14,
@@ -1103,8 +1110,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   selectedOrderBox: {
-    minHeight: 60,
-    padding: 12,
+    minHeight: 56,
+    padding: 10,
     backgroundColor: '#f9fafb',
     borderRadius: 12,
     borderWidth: 2,
@@ -1131,16 +1138,20 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   shuffledDaysGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 20,
+    paddingBottom: 0,
+    marginBottom: 24,
+  },
+  shuffledDaysRow: {
+    justifyContent: 'flex-start',
+    marginBottom: 12,
+  },
+  shuffledDayButtonWrapperMarginRight: {
+    marginRight: 12,
   },
   shuffledDayButton: {
-    flex: 1,
-    minWidth: (width - 64) / 4 - 12,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
+    width: '100%',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderRadius: 12,
     borderWidth: 2,
     borderColor: '#e5e7eb',
@@ -1153,20 +1164,24 @@ const styles = StyleSheet.create({
     borderColor: '#3A86FF',
   },
   shuffledDayText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     color: '#111827',
   },
   shuffledDayTextSelected: {
     color: '#ffffff',
   },
+  checkButtonContainer: {
+    marginTop: 8,
+  },
   checkButton: {
-    paddingVertical: 16,
+    paddingVertical: 14,
     paddingHorizontal: 24,
     borderRadius: 12,
     backgroundColor: '#3A86FF',
     alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
   },
   checkButtonDisabled: {
     backgroundColor: '#e5e7eb',

@@ -252,19 +252,22 @@ export default function LearnPage() {
 
   // Check if a lesson is locked (previous lesson must be 100% completed)
   const isLessonLocked = (lessonIndex: number): boolean => {
+    // TEMPORARILY UNLOCKED FOR TESTING - TODO: Re-enable locking later
+    return false
+    
     // First lesson is always unlocked
-    if (lessonIndex === 0) return false
+    // if (lessonIndex === 0) return false
     
     // Check if previous lesson is completed
-    const previousLesson = lessons[lessonIndex - 1]
-    const previousProgress = getLessonProgress(previousLesson.id)
+    // const previousLesson = lessons[lessonIndex - 1]
+    // const previousProgress = getLessonProgress(previousLesson.id)
     
     // Lesson is unlocked if previous lesson has 100% progress
     // (Status should be COMPLETED, but we also unlock at 100% progress as fallback)
-    const isUnlocked = previousProgress.progress === 100
+    // const isUnlocked = previousProgress.progress === 100
     
     // Lesson is locked if previous lesson is not 100% completed
-    return !isUnlocked
+    // return !isUnlocked
   }
 
   // Check if lesson is completed

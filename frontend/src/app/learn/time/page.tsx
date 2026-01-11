@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { motion } from "framer-motion"
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Clock, Sun, Moon, Calendar, ArrowLeft } from "lucide-react"
 import AudioButton from "../../../components/lessons/AudioButton"
 
@@ -53,10 +53,10 @@ const timeQuestions = [
 
 // Telling Time
 const clockTimes = [
-  { time: "08:00", ku: "saet heşt", en: "eight o'clock", audioFile: "/audio/kurdish-tts-mp3/time/saet-hest.mp3" },
+  { time: "08:00", ku: "saet heştê sibê", en: "eight o'clock in the morning", audioFile: "/audio/kurdish-tts-mp3/time/saet-heste-sibe.mp3" },
   { time: "12:00", ku: "saet dazdeh", en: "twelve o'clock", audioFile: "/audio/kurdish-tts-mp3/time/saet-dazdeh.mp3" },
   { time: "15:30", ku: "sê û nîv", en: "three thirty", audioFile: "/audio/kurdish-tts-mp3/time/se-u-niv.mp3" },
-  { time: "20:00", ku: "saet heşt", en: "eight o'clock", audioFile: "/audio/kurdish-tts-mp3/time/saet-hest.mp3" },
+  { time: "20:00", ku: "saet heştê şevê", en: "eight o'clock at night", audioFile: "/audio/kurdish-tts-mp3/time/saet-heste-seve.mp3" },
   { time: "09:15", ku: "neh û panzdeh", en: "nine fifteen", audioFile: "/audio/kurdish-tts-mp3/time/neh-u-panzdeh.mp3" },
   { time: "14:45", ku: "du û çil û pênc deqe", en: "two forty-five", audioFile: "/audio/kurdish-tts-mp3/time/du-u-cil-u-penc-deqe.mp3" },
   { time: "06:00", ku: "saet şeş", en: "six o'clock", audioFile: "/audio/kurdish-tts-mp3/time/saet-ses.mp3" },
@@ -106,41 +106,7 @@ function numberToKurdish(num: number): string {
   }
 }
 
-// Helper function to convert time to Kurdish
-function getTimeInKurdish(hours: number, minutes: number): string {
-  const hourNames: { [key: number]: string } = {
-    0: "sifir", 1: "yek", 2: "du", 3: "sê", 4: "çar", 5: "pênc",
-    6: "şeş", 7: "heft", 8: "heşt", 9: "neh", 10: "deh",
-    11: "yanzdeh", 12: "dazdeh", 13: "sêzdeh", 14: "çardeh", 15: "pênzdeh",
-    16: "şanzdeh", 17: "hevdeh", 18: "hejdeh", 19: "nozdeh", 20: "bîst",
-    21: "bîst û yek", 22: "bîst û du", 23: "bîst û sê"
-  }
-  
-  const hourName = hourNames[hours] || numberToKurdish(hours)
-  
-  if (minutes === 0) {
-    return `saet ${hourName}`
-  } else if (minutes === 30) {
-    return `${hourName} û nîv`
-  } else {
-    const minutesKurdish = numberToKurdish(minutes)
-    return `saet ${hourName} û ${minutesKurdish}`
-  }
-}
-
 export default function TimePage() {
-  const [currentTime, setCurrentTime] = useState(new Date())
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date())
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [])
-
-  const hours = currentTime.getHours()
-  const minutes = currentTime.getMinutes()
-  const timeInKurdish = getTimeInKurdish(hours, minutes)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
@@ -154,58 +120,6 @@ export default function TimePage() {
         </div>
 
         <p className="text-gray-700 mb-6 text-center">Learn to tell time and talk about daily activities in Kurdish.</p>
-
-        {/* Compact Interactive Clock */}
-        <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className="card p-4 mb-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="relative w-20 h-20 flex-shrink-0">
-                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 200 200">
-                  <circle cx="100" cy="100" r="90" fill="white" stroke="#E31E24" strokeWidth="2"/>
-                  {/* Hour markers */}
-                  {Array.from({ length: 12 }).map((_, i) => {
-                    const angle = (i * 30 - 90) * (Math.PI / 180)
-                    const x1 = 100 + 75 * Math.cos(angle)
-                    const y1 = 100 + 75 * Math.sin(angle)
-                    const x2 = 100 + 85 * Math.cos(angle)
-                    const y2 = 100 + 85 * Math.sin(angle)
-                    return (
-                      <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#E31E24" strokeWidth="1.5"/>
-                    )
-                  })}
-                  {/* Hour hand */}
-                  <line
-                    x1="100"
-                    y1="100"
-                    x2={100 + 35 * Math.cos(((hours % 12) * 30 + minutes * 0.5 - 90) * (Math.PI / 180))}
-                    y2={100 + 35 * Math.sin(((hours % 12) * 30 + minutes * 0.5 - 90) * (Math.PI / 180))}
-                    stroke="#E31E24"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                  />
-                  {/* Minute hand */}
-                  <line
-                    x1="100"
-                    y1="100"
-                    x2={100 + 50 * Math.cos((minutes * 6 - 90) * (Math.PI / 180))}
-                    y2={100 + 50 * Math.sin((minutes * 6 - 90) * (Math.PI / 180))}
-                    stroke="#00A651"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                  />
-                  <circle cx="100" cy="100" r="6" fill="#E31E24"/>
-                </svg>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-kurdish-red">
-                  {String(hours).padStart(2, '0')}:{String(minutes).padStart(2, '0')}
-                </div>
-                <div className="text-sm font-semibold text-gray-700">{timeInKurdish}</div>
-              </div>
-            </div>
-            <Clock className="w-5 h-5 text-primaryBlue flex-shrink-0" />
-          </div>
-        </motion.div>
 
         {/* Basic Times */}
         <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className="card p-6 mb-6">

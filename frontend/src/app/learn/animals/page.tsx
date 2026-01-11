@@ -53,7 +53,7 @@ interface ExerciseItem {
   icon: string
 }
 
-const QUESTIONS_PER_SESSION = 10
+const QUESTIONS_PER_SESSION = 20
 const LESSON_ID = '9' // Animals lesson ID
 
 export default function AnimalsWordsPage() {
@@ -66,6 +66,8 @@ export default function AnimalsWordsPage() {
   const [score, setScore] = useState({ correct: 0, total: 0 })
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const [isCompleted, setIsCompleted] = useState(false)
+  const [practiceQuestions, setPracticeQuestions] = useState<ExerciseItem[]>([])
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const startTimeRef = useRef<number>(Date.now())
   const audioPlaysRef = useRef<Set<string>>(new Set())
 
@@ -77,30 +79,22 @@ export default function AnimalsWordsPage() {
     icon: animal.icon
   }))
 
-  // Generate new exercise
-  const generateExercise = () => {
-    const randomItem = allExerciseItems[Math.floor(Math.random() * allExerciseItems.length)]
-    setCurrentExercise(randomItem)
-    
-    // Generate 3 wrong options
-    const wrongOptions = allExerciseItems
-      .filter(item => item.ku !== randomItem.ku)
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 3)
-    
-    // Combine correct answer with wrong options and shuffle
-    const allOptions = [randomItem, ...wrongOptions].sort(() => Math.random() - 0.5)
-    setOptions(allOptions)
-    setSelectedAnswer(null)
-    setShowFeedback(false)
+  // Generate 20 unique questions for practice session
+  const generatePracticeQuestions = (): ExerciseItem[] => {
+    // Shuffle all animals and take 20 unique ones
+    const shuffled = [...allExerciseItems].sort(() => Math.random() - 0.5)
+    return shuffled.slice(0, Math.min(QUESTIONS_PER_SESSION, shuffled.length))
   }
 
   // Start new practice session
   const startPracticeSession = () => {
+    // Generate new unique set of 20 questions
+    const newQuestions = generatePracticeQuestions()
+    setPracticeQuestions(newQuestions)
     setScore({ correct: 0, total: 0 })
     setCurrentQuestion(1)
+    setCurrentQuestionIndex(0)
     setIsCompleted(false)
-    generateExercise()
   }
 
   // Initialize first exercise when switching to practice mode
@@ -110,6 +104,29 @@ export default function AnimalsWordsPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode])
+
+  // Generate exercise when practice questions are ready or question index changes
+  useEffect(() => {
+    if (mode === 'practice' && practiceQuestions.length > 0 && currentQuestionIndex < practiceQuestions.length) {
+      const currentItem = practiceQuestions[currentQuestionIndex]
+      if (currentItem) {
+        setCurrentExercise(currentItem)
+        
+        // Generate 3 wrong options
+        const wrongOptions = allExerciseItems
+          .filter(item => item.ku !== currentItem.ku)
+          .sort(() => Math.random() - 0.5)
+          .slice(0, 3)
+        
+        // Combine correct answer with wrong options and shuffle
+        const allOptions = [currentItem, ...wrongOptions].sort(() => Math.random() - 0.5)
+        setOptions(allOptions)
+        setSelectedAnswer(null)
+        setShowFeedback(false)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [practiceQuestions, currentQuestionIndex, mode])
 
   const handleAnswerSelect = (answerKu: string) => {
     if (showFeedback || isCompleted) return
@@ -130,12 +147,12 @@ export default function AnimalsWordsPage() {
   }
 
   const handleNext = () => {
-    if (currentQuestion >= QUESTIONS_PER_SESSION) {
+    if (currentQuestion >= QUESTIONS_PER_SESSION || currentQuestionIndex >= practiceQuestions.length - 1) {
       setIsCompleted(true)
       return
     }
     setCurrentQuestion(prev => prev + 1)
-    generateExercise()
+    setCurrentQuestionIndex(prev => prev + 1)
   }
 
   const handleRestart = () => {

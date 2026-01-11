@@ -74,7 +74,7 @@ const pastTenseExamples = [
       { ku: "Te bihîst.", en: "You heard", audio: true, audioText: "Te bihîst" },
       { ku: "Wî axaft.", en: "He spoke", audio: true, audioText: "Wî axaft" },
       { ku: "Me kir.", en: "We did", audio: true, audioText: "Me kir" },
-      { ku: "Wan hat.", en: "They came", audio: true, audioText: "Wan hat" },
+      { ku: "Ew hatin.", en: "They came", audio: true, audioText: "Ew hatin" },
       { ku: "Min çû bazarê.", en: "I went to the market", audio: true, audioText: "Min çû bazarê" }
     ]
   },
@@ -91,7 +91,7 @@ const pastTenseExamples = [
     title: 'Questions',
     examples: [
       { ku: "Te çi xwar?", en: "What did you eat?", audio: true },
-      { ku: "Wî kû çû?", en: "Where did he go?", audio: true },
+      { ku: "Wî çû ku derê?", en: "Where did he go?", audio: true, audioText: "Wî çû ku derê" },
       { ku: "Tu kengî hatî?", en: "When did you come?", audio: true },
       { ku: "Min çi kir?", en: "What did I do?", audio: true }
     ]
@@ -173,9 +173,9 @@ const practiceExercises = [
   },
   {
     question: "How do you say 'They came' in past tense?",
-    options: ["Ewan hatin", "Wan hat", "Ewan hat", "Wan hatin"],
+    options: ["Ewan hatin", "Ew hatin", "Ewan hat", "Wan hat"],
     correct: 1,
-    explanation: "Past tense: Wan (not Ewan) + past verb (hat) = Wan hat"
+    explanation: "Past tense: Ew + past verb (hatin) = Ew hatin"
   },
   {
     question: "What is the negative form of 'Min xwar'?",
@@ -447,7 +447,7 @@ export default function SimplePastPage() {
                   </ul>
                 </div>
                 
-                <p className="text-sm text-gray-600 mt-3 bg-orange-100 p-3 rounded-lg">
+                <p className="text-sm text-gray-600 mt-3 bg-green-100 p-3 rounded-lg">
                   <strong>💡 Important:</strong> Always remember to use <span className="font-bold">Min/Te/Wî</span> for past tense, never <span className="font-bold">Ez/Tu/Ew</span>! The verb form also changes - it becomes shorter and simpler.
                 </p>
               </div>
@@ -464,7 +464,7 @@ export default function SimplePastPage() {
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
-                    <tr className="bg-gradient-to-r from-orange-100 to-red-100">
+                    <tr className="bg-gradient-to-r from-green-100 to-teal-100">
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">English</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Present Tense</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Past Tense</th>
@@ -501,7 +501,7 @@ export default function SimplePastPage() {
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
-                    <tr className="bg-gradient-to-r from-orange-100 to-red-100">
+                    <tr className="bg-gradient-to-r from-green-100 to-teal-100">
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Pronoun</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Kurdish</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">English</th>
@@ -528,7 +528,7 @@ export default function SimplePastPage() {
               </p>
             </motion.div>
 
-            {/* More Verbs Table */}
+            {/* Common Verbs - Card Layout */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -536,29 +536,111 @@ export default function SimplePastPage() {
               className="card p-6 mb-6"
             >
               <h2 className="text-xl font-bold text-gray-800 mb-4">📚 Common Verbs in Past Tense</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="bg-gradient-to-r from-green-100 to-teal-100">
-                      <th className="border border-gray-300 px-4 py-3 text-left font-bold">Infinitive</th>
-                      <th className="border border-gray-300 px-4 py-3 text-left font-bold">English</th>
-                      <th className="border border-gray-300 px-4 py-3 text-left font-bold">Past Form</th>
-                      <th className="border border-gray-300 px-4 py-3 text-left font-bold">Min (I)</th>
-                      <th className="border border-gray-300 px-4 py-3 text-left font-bold">Te (You)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {commonVerbs.map((verb, index) => (
-                      <tr key={index} className="hover:bg-gray-50">
-                        <td className="border border-gray-300 px-4 py-3 font-mono text-kurdish-red font-bold">{verb.infinitive}</td>
-                        <td className="border border-gray-300 px-4 py-3 text-gray-700">{verb.en}</td>
-                        <td className="border border-gray-300 px-4 py-3 font-mono text-kurdish-red">{verb.past}</td>
-                        <td className="border border-gray-300 px-4 py-3 font-mono text-kurdish-red">Min {verb.past}</td>
-                        <td className="border border-gray-300 px-4 py-3 font-mono text-kurdish-red">Te {verb.past}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="grid sm:grid-cols-1 md:grid-cols-2 gap-4">
+                {commonVerbs.map((verb, index) => (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 * index }}
+                    className="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:shadow-md transition-shadow"
+                  >
+                    <div className="mb-3 pb-3 border-b border-gray-200 flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="font-mono text-kurdish-red font-bold text-lg">{verb.infinitive}</div>
+                        <div className="text-gray-600 text-sm mt-1">{verb.en}</div>
+                      </div>
+                      <AudioButton
+                        kurdishText={verb.infinitive}
+                        phoneticText={verb.en}
+                        audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(verb.infinitive)}.mp3`}
+                        label=""
+                        size="small"
+                        onPlay={handleAudioPlay}
+                      />
+                    </div>
+                    <div className="mb-3 pb-3 border-b border-gray-200">
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-600 font-semibold text-sm">Past Form: </span>
+                        <span className="font-mono text-kurdish-red font-bold">{verb.past}</span>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-600 font-semibold w-16 text-sm">Min:</span>
+                        <span className="font-mono text-kurdish-red flex-1">Min {verb.past}</span>
+                        <AudioButton
+                          kurdishText={`Min ${verb.past}`}
+                          phoneticText="I ate"
+                          audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Min ${verb.past}`)}.mp3`}
+                          label=""
+                          size="small"
+                          onPlay={handleAudioPlay}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-600 font-semibold w-16 text-sm">Te:</span>
+                        <span className="font-mono text-kurdish-red flex-1">Te {verb.past}</span>
+                        <AudioButton
+                          kurdishText={`Te ${verb.past}`}
+                          phoneticText="You ate"
+                          audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Te ${verb.past}`)}.mp3`}
+                          label=""
+                          size="small"
+                          onPlay={handleAudioPlay}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-600 font-semibold w-16 text-sm">Wî/Wê:</span>
+                        <span className="font-mono text-kurdish-red flex-1">Wî {verb.past} / Wê {verb.past}</span>
+                        <AudioButton
+                          kurdishText={`Wî ${verb.past}`}
+                          phoneticText="He ate"
+                          audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Wî ${verb.past}`)}.mp3`}
+                          label=""
+                          size="small"
+                          onPlay={handleAudioPlay}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-600 font-semibold w-16 text-sm">Me:</span>
+                        <span className="font-mono text-kurdish-red flex-1">Me {verb.past}</span>
+                        <AudioButton
+                          kurdishText={`Me ${verb.past}`}
+                          phoneticText="We ate"
+                          audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Me ${verb.past}`)}.mp3`}
+                          label=""
+                          size="small"
+                          onPlay={handleAudioPlay}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-600 font-semibold w-16 text-sm">We:</span>
+                        <span className="font-mono text-kurdish-red flex-1">We {verb.past}</span>
+                        <AudioButton
+                          kurdishText={`We ${verb.past}`}
+                          phoneticText="You (plural) ate"
+                          audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`We ${verb.past}`)}.mp3`}
+                          label=""
+                          size="small"
+                          onPlay={handleAudioPlay}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-600 font-semibold w-16 text-sm">Wan:</span>
+                        <span className="font-mono text-kurdish-red flex-1">Wan {verb.past}</span>
+                        <AudioButton
+                          kurdishText={`Wan ${verb.past}`}
+                          phoneticText="They ate"
+                          audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Wan ${verb.past}`)}.mp3`}
+                          label=""
+                          size="small"
+                          onPlay={handleAudioPlay}
+                        />
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
               </div>
             </motion.div>
 

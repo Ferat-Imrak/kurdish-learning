@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, MessageCircle, Users, ShoppingCart, Utensils, MapPin, Phone, Heart, Coffee, Car, BookOpen, Volume2, Play, Pause, RotateCcw } from 'lucide-react'
+import { ArrowLeft, MessageCircle, Users, ShoppingCart, Utensils, MapPin, Phone, Heart, Coffee, Car } from 'lucide-react'
 import Link from 'next/link'
 import AudioButton from '../../../components/lessons/AudioButton'
 
@@ -924,7 +924,6 @@ const conversations: Conversation[] = [
 
 export default function DailyConversationsPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
-  const [practiceMode, setPracticeMode] = useState(false)
 
   const filteredConversations = selectedCategory === 'all' 
     ? conversations 
@@ -1068,21 +1067,6 @@ export default function DailyConversationsPage() {
           ))}
         </motion.div>
 
-        {/* Practice Mode Button */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5, delay: 0.5 }}
-          className="text-center mt-8"
-        >
-          <button
-            onClick={() => setPracticeMode(!practiceMode)}
-            className="bg-gradient-to-r from-kurdish-red to-purple-600 text-white px-8 py-3 rounded-full font-bold text-lg hover:shadow-lg transition-all duration-300 flex items-center gap-2 mx-auto"
-          >
-            <BookOpen className="w-5 h-5" />
-            {practiceMode ? 'Exit Practice Mode' : 'Start Practice Mode'}
-          </button>
-        </motion.div>
       </div>
 
     </div>

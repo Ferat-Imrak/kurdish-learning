@@ -426,7 +426,7 @@ export default function PossessivePronounsPage() {
                   </div>
                 </div>
                 
-                <p className="text-sm text-gray-600 mt-3 bg-indigo-100 p-3 rounded-lg">
+                <p className="text-sm text-gray-600 mt-3 bg-green-100 p-3 rounded-lg">
                   <strong>💡 Tip:</strong> Remember: <span className="font-bold">Noun + Ending + Possessive</span> - the opposite of English! Also, use subject pronouns (ez, tu, ew) for subjects, but possessive pronouns (min, te, wî) for possessives.
                 </p>
               </div>
@@ -443,11 +443,10 @@ export default function PossessivePronounsPage() {
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
-                    <tr className="bg-gradient-to-r from-indigo-100 to-purple-100">
+                    <tr className="bg-gradient-to-r from-green-100 to-teal-100">
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Kurdish</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">English</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Example</th>
-                      <th className="border border-gray-300 px-4 py-3 text-left font-bold">Translation</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Usage</th>
                     </tr>
                   </thead>
@@ -459,9 +458,11 @@ export default function PossessivePronounsPage() {
                         </td>
                         <td className="border border-gray-300 px-4 py-3 text-gray-700">{row.en}</td>
                         <td className="border border-gray-300 px-4 py-3">
-                          <span className="font-mono text-kurdish-red">{row.example}</span>
+                          <div className="flex flex-col">
+                            <span className="font-mono text-kurdish-red">{row.example}</span>
+                            <span className="text-gray-600 text-sm mt-1">{row.exampleEn}</span>
+                          </div>
                         </td>
-                        <td className="border border-gray-300 px-4 py-3 text-gray-700">{row.exampleEn}</td>
                         <td className="border border-gray-300 px-4 py-3 text-sm text-gray-600">{row.usage}</td>
                       </tr>
                     ))}

@@ -120,12 +120,15 @@ export default function LessonsPage() {
 
   // Check if a lesson is unlocked
   const isLessonUnlocked = (lesson: Lesson): boolean => {
+    // TEMPORARILY UNLOCKED FOR TESTING - TODO: Re-enable locking later
+    return true
+    
     // First lesson is always unlocked
-    if (!lesson.unlocksAfter) return true
+    // if (!lesson.unlocksAfter) return true
     
     // Check if prerequisite lesson is completed
-    const prerequisiteProgress = getLessonProgress(lesson.unlocksAfter)
-    return prerequisiteProgress.status === 'COMPLETED'
+    // const prerequisiteProgress = getLessonProgress(lesson.unlocksAfter)
+    // return prerequisiteProgress.status === 'COMPLETED'
   }
 
   // Calculate overall progress

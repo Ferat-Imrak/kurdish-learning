@@ -91,19 +91,22 @@ export default function AudioButton({
       // Priority 2: Downloaded Kurdish TTS files (MP3)
       if (kurdishText) {
         const filename = getAudioFilename(kurdishText);
-        const mp3Path = `/audio/kurdish-tts-mp3/${filename}.mp3`;
+        // Try conversations subdirectory first (for Daily Conversations lesson)
+        const conversationsPath = `/audio/kurdish-tts-mp3/conversations/${filename}.mp3`;
+        // Try grammar subdirectory (where most lesson audio files are)
+        const grammarPath = `/audio/kurdish-tts-mp3/grammar/${filename}.mp3`;
+        const rootPath = `/audio/kurdish-tts-mp3/${filename}.mp3`;
         
+        // Try conversations path first
         try {
-          const audio = new Audio(mp3Path);
+          const audio = new Audio(conversationsPath);
           
-          // Test if file exists by trying to load it
           await new Promise((resolve, reject) => {
             audio.onloadeddata = resolve;
             audio.onerror = reject;
             audio.load();
           });
           
-          // File exists and loaded successfully
           audio.onended = () => {
             setIsPlaying(false)
             setIsLoading(false)
@@ -112,8 +115,48 @@ export default function AudioButton({
           setIsLoading(false);
           onPlay?.();
           return;
-        } catch (localError) {
-          // File doesn't exist, continue to API/fallbacks
+        } catch (conversationsError) {
+          // Try grammar path
+          try {
+            const audio = new Audio(grammarPath);
+            
+            await new Promise((resolve, reject) => {
+              audio.onloadeddata = resolve;
+              audio.onerror = reject;
+              audio.load();
+            });
+            
+            audio.onended = () => {
+              setIsPlaying(false)
+              setIsLoading(false)
+            }
+            await audio.play();
+            setIsLoading(false);
+            onPlay?.();
+            return;
+          } catch (grammarError) {
+            // Try root path as fallback
+            try {
+              const audio = new Audio(rootPath);
+              
+              await new Promise((resolve, reject) => {
+                audio.onloadeddata = resolve;
+                audio.onerror = reject;
+                audio.load();
+              });
+              
+              audio.onended = () => {
+                setIsPlaying(false)
+                setIsLoading(false)
+              }
+              await audio.play();
+              setIsLoading(false);
+              onPlay?.();
+              return;
+            } catch (localError) {
+              // File doesn't exist in any location, continue to API/fallbacks
+            }
+          }
         }
       }
 

@@ -40,7 +40,6 @@ const roomTypes = [
   { ku: "aşxane", en: "kitchen", audioFile: "/audio/kurdish-tts-mp3/house/asxane.mp3" },
   { ku: "odeya rûniştinê", en: "living room", audioFile: "/audio/kurdish-tts-mp3/house/odeya-runistine.mp3" },
   { ku: "hemam", en: "bathroom", audioFile: "/audio/kurdish-tts-mp3/house/hemam.mp3" },
-  { ku: "odeya xwendinê", en: "study room", audioFile: "/audio/kurdish-tts-mp3/house/odeya-xwendine.mp3" },
 ]
 
 const houseQuestions = [

@@ -414,7 +414,7 @@ export default function QuestionsNegationPage() {
                   </p>
                 </div>
                 
-                <p className="text-sm text-gray-600 mt-3 bg-orange-100 p-3 rounded-lg">
+                <p className="text-sm text-gray-600 mt-3 bg-green-100 p-3 rounded-lg">
                   <strong>💡 Tip:</strong> Questions are easy - just add a question word! Negation is simple - just change "di-" to "na-" for verbs. Remember SOV order applies to both!
                 </p>
               </div>
@@ -431,7 +431,7 @@ export default function QuestionsNegationPage() {
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
-                    <tr className="bg-gradient-to-r from-orange-100 to-red-100">
+                    <tr className="bg-gradient-to-r from-green-100 to-teal-100">
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Kurdish</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">English</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Example</th>

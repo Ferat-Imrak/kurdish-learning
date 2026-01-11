@@ -420,7 +420,6 @@ export default function ArticlesPluralsPage() {
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Ending</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Meaning</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Example</th>
-                      <th className="border border-gray-300 px-4 py-3 text-left font-bold">Translation</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Usage</th>
                     </tr>
                   </thead>
@@ -432,9 +431,11 @@ export default function ArticlesPluralsPage() {
                         </td>
                         <td className="border border-gray-300 px-4 py-3 text-gray-700">{row.meaning}</td>
                         <td className="border border-gray-300 px-4 py-3">
-                          <span className="font-mono text-kurdish-red">{row.example}</span>
+                          <div className="flex flex-col">
+                            <span className="font-mono text-kurdish-red">{row.example}</span>
+                            <span className="text-gray-600 text-sm mt-1">{row.exampleEn}</span>
+                          </div>
                         </td>
-                        <td className="border border-gray-300 px-4 py-3 text-gray-700">{row.exampleEn}</td>
                         <td className="border border-gray-300 px-4 py-3 text-sm text-gray-600">{row.usage}</td>
                       </tr>
                     ))}

@@ -11,11 +11,17 @@
     "start": "cd frontend && npm start",
     "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install"
   },
-  "keywords": ["kurdish", "language-learning", "kids", "education"],
+  "keywords": [
+    "kurdish",
+    "language-learning",
+    "kids",
+    "education"
+  ],
   "author": "Ferhat",
   "license": "MIT",
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "concurrently": "^8.2.2",
+    "fluent-ffmpeg": "^2.1.3"
   }
 }
-

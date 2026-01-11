@@ -104,15 +104,14 @@ const foodItemsWithAudio = foodItems.map(item => {
 
 const mealTimes = [
   { ku: "taştê", en: "breakfast", icon: "🌅", audioFile: "/audio/kurdish-tts-mp3/food/taste.mp3" },
-  { ku: "xwarina nîvro", en: "lunch", icon: "☀️", audioFile: "/audio/kurdish-tts-mp3/food/xwarina-nivro.mp3" },
-  { ku: "xwarina êvarê", en: "dinner", icon: "🌙", audioFile: "/audio/kurdish-tts-mp3/food/xwarina-evare.mp3" },
-  { ku: "çay", en: "snack", icon: "🍪", audioFile: "/audio/kurdish-tts-mp3/food/cay.mp3" },
+  { ku: "firavîn", en: "lunch", icon: "☀️", audioFile: "/audio/kurdish-tts-mp3/food/firavin.mp3" },
+  { ku: "şîv", en: "dinner", icon: "🌙", audioFile: "/audio/kurdish-tts-mp3/food/shiv.mp3" },
 ]
 
 const foodQuestions = [
   { ku: "Tu çi dixwazî ji bo taştê?", en: "What do you want for breakfast?", audioFile: "/audio/kurdish-tts-mp3/food/tu-ci-dixwazi-ji-bo-taste.mp3" },
   { ku: "Tu taştê hez dikî?", en: "Do you like breakfast?", audioFile: "/audio/kurdish-tts-mp3/food/tu-taste-hez-diki.mp3" },
-  { ku: "Tu çi dixwazî ji bo xwarina êvarê?", en: "What do you want for dinner?", audioFile: "/audio/kurdish-tts-mp3/food/tu-ci-dixwazi-ji-bo-xwarina-evare.mp3" },
+  { ku: "Tu çi dixwazî ji bo şîvê?", en: "What do you want for dinner?", audioFile: "/audio/kurdish-tts-mp3/food/tu-ci-dixwazi-ji-bo-shive.mp3" },
   { ku: "Tu çi xwarin hez dikî?", en: "What food do you like?", audioFile: "/audio/kurdish-tts-mp3/food/tu-ci-xwarin-hez-diki.mp3" },
   { ku: "Tu çi vexwarin hez dikî?", en: "What drink do you like?", audioFile: "/audio/kurdish-tts-mp3/food/tu-ci-vexwarin-hez-diki.mp3" },
   { ku: "Tu masî hez dikî?", en: "Do you like fish?", audioFile: "/audio/kurdish-tts-mp3/food/tu-masi-hez-diki.mp3" },

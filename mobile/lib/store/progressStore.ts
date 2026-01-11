@@ -1,6 +1,6 @@
-// Progress tracking store with SecureStore persistence
+// Progress tracking store with AsyncStorage persistence
 import { create } from 'zustand';
-import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from './authStore';
 
 export interface LessonProgress {
@@ -31,8 +31,7 @@ interface ProgressState {
 
 const PROGRESS_KEY = 'lesson_progress';
 
-// Helper function to sanitize email for SecureStore key
-// SecureStore only allows alphanumeric, ".", "-", and "_"
+// Helper function to sanitize email for storage key
 const sanitizeEmailForKey = (email: string): string => {
   return email.replace(/[^a-zA-Z0-9._-]/g, '_');
 };
@@ -52,7 +51,7 @@ export const useProgressStore = create<ProgressState>((set, get) => ({
 
       const sanitizedEmail = sanitizeEmailForKey(user.email);
       const key = `${PROGRESS_KEY}_${sanitizedEmail}`;
-      const stored = await SecureStore.getItemAsync(key);
+      const stored = await AsyncStorage.getItem(key);
       
       if (stored) {
         try {
@@ -108,12 +107,12 @@ export const useProgressStore = create<ProgressState>((set, get) => ({
       },
     }));
 
-    // Save to SecureStore
+    // Save to AsyncStorage
     try {
       const sanitizedEmail = sanitizeEmailForKey(user.email);
       const key = `${PROGRESS_KEY}_${sanitizedEmail}`;
       const allProgress = get().lessonProgress;
-      await SecureStore.setItemAsync(key, JSON.stringify(allProgress));
+      await AsyncStorage.setItem(key, JSON.stringify(allProgress));
     } catch (error) {
       console.error('Error saving progress:', error);
     }
@@ -152,7 +151,7 @@ export const useProgressStore = create<ProgressState>((set, get) => ({
       try {
         const sanitizedEmail = sanitizeEmailForKey(user.email);
         const key = `${PROGRESS_KEY}_${sanitizedEmail}`;
-        await SecureStore.deleteItemAsync(key);
+        await AsyncStorage.removeItem(key);
       } catch (error) {
         console.error('Error clearing progress:', error);
       }

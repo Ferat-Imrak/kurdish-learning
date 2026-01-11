@@ -398,7 +398,7 @@ export default function SentenceStructurePronounsPage() {
                   </div>
                 </div>
                 
-                <p className="text-sm text-gray-600 mt-3 bg-blue-100 p-3 rounded-lg">
+                <p className="text-sm text-gray-600 mt-3 bg-green-100 p-3 rounded-lg">
                   <strong>💡 Tip:</strong> Always remember: <span className="font-bold">Verb comes last!</span> This is different from English where verbs come in the middle.
                 </p>
               </div>
@@ -415,7 +415,7 @@ export default function SentenceStructurePronounsPage() {
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
-                    <tr className="bg-gradient-to-r from-blue-100 to-purple-100">
+                    <tr className="bg-gradient-to-r from-green-100 to-teal-100">
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Kurdish</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">English</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Example</th>

@@ -35,14 +35,14 @@ const conjugationTable = [
 ]
 
 const commonVerbs = [
-  { infinitive: "xwarin", en: "to eat", root: "xwar" },
-  { infinitive: "çûn", en: "to go", root: "ç" },
-  { infinitive: "kirin", en: "to do", root: "kir" },
-  { infinitive: "xwendin", en: "to read", root: "xwên" },
-  { infinitive: "hatin", en: "to come", root: "hat" },
-  { infinitive: "dîtin", en: "to see", root: "bîn" },
-  { infinitive: "bihîstin", en: "to hear", root: "bihîs" },
-  { infinitive: "axaftin", en: "to speak", root: "axaft" }
+  { infinitive: "xwarin", en: "to eat", root: "xwar", ez: "dixwim", tu: "dixwî", ew: "dixwe", em: "dixwin", hun: "dixwin", ewan: "dixwin" },
+  { infinitive: "çûn", en: "to go", root: "ç", ez: "diçim", tu: "diçî", ew: "diçe", em: "diçin", hun: "diçin", ewan: "diçin" },
+  { infinitive: "kirin", en: "to do", root: "kir", ez: "dikim", tu: "dikî", ew: "dike", em: "dikin", hun: "dikin", ewan: "dikin" },
+  { infinitive: "xwendin", en: "to read", root: "xwên", ez: "dixwînim", tu: "dixwînî", ew: "dixwîne", em: "dixwînin", hun: "dixwînin", ewan: "dixwînin" },
+  { infinitive: "hatin", en: "to come", root: "hat", ez: "hatim", tu: "hatî", ew: "tê", em: "tên", hun: "tên", ewan: "tên" },
+  { infinitive: "dîtin", en: "to see", root: "bîn", ez: "dibînim", tu: "dibînî", ew: "dibîne", em: "dibînin", hun: "dibînin", ewan: "dibînin" },
+  { infinitive: "bihîstin", en: "to hear", root: "bihîs", ez: "dibihîzim", tu: "dibihîzî", ew: "dibihîze", em: "dibihîzin", hun: "dibihîzin", ewan: "dibihîzin" },
+  { infinitive: "axaftin", en: "to speak", root: "axaft", ez: "diaxivim", tu: "diaxivî", ew: "diaxive", em: "diaxevin", hun: "diaxevin", ewan: "diaxevin" }
 ]
 
 const presentTenseExamples = [
@@ -81,7 +81,7 @@ const presentTenseExamples = [
     title: 'Questions',
     examples: [
       { ku: "Tu çi dixwî?", en: "What do you eat?", audio: true },
-      { ku: "Ew kû diçe?", en: "Where does he/she go?", audio: true },
+      { ku: "Ew diçe ku derê?", en: "Where does he/she go?", audio: true, audioText: "Ew diçe ku derê?" },
       { ku: "Tu çawa yî?", en: "How are you?", audio: true },
       { ku: "Ez çi bikim?", en: "What should I do?", audio: true }
     ]
@@ -426,7 +426,7 @@ export default function SimplePresentPage() {
                   </ul>
                 </div>
                 
-                <p className="text-sm text-gray-600 mt-3 bg-blue-100 p-3 rounded-lg">
+                <p className="text-sm text-gray-600 mt-3 bg-green-100 p-3 rounded-lg">
                   <strong>💡 Tip:</strong> The <span className="font-bold">"di-"</span> prefix always stays the same, but the ending changes based on who is doing the action!
                 </p>
               </div>
@@ -443,7 +443,7 @@ export default function SimplePresentPage() {
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
-                    <tr className="bg-gradient-to-r from-blue-100 to-purple-100">
+                    <tr className="bg-gradient-to-r from-green-100 to-teal-100">
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Pronoun</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Ending</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Kurdish</th>
@@ -482,37 +482,110 @@ export default function SimplePresentPage() {
               className="card p-6 mb-6"
             >
               <h2 className="text-xl font-bold text-gray-800 mb-4">📚 Common Verbs in Present Tense</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="bg-gradient-to-r from-green-100 to-teal-100">
-                      <th className="border border-gray-300 px-4 py-3 text-left font-bold">Infinitive</th>
-                      <th className="border border-gray-300 px-4 py-3 text-left font-bold">English</th>
-                      <th className="border border-gray-300 px-4 py-3 text-left font-bold">Ez (I)</th>
-                      <th className="border border-gray-300 px-4 py-3 text-left font-bold">Tu (You)</th>
-                      <th className="border border-gray-300 px-4 py-3 text-left font-bold">Ew (He/She)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {commonVerbs.map((verb, index) => {
-                      // Generate conjugations (simplified - in real app you'd have full conjugation logic)
-                      const conjugations = {
-                        ez: `di${verb.root}im`,
-                        tu: `di${verb.root}î`,
-                        ew: `di${verb.root}e`
-                      }
-                      return (
-                        <tr key={index} className="hover:bg-gray-50">
-                          <td className="border border-gray-300 px-4 py-3 font-mono text-kurdish-red font-bold">{verb.infinitive}</td>
-                          <td className="border border-gray-300 px-4 py-3 text-gray-700">{verb.en}</td>
-                          <td className="border border-gray-300 px-4 py-3 font-mono text-kurdish-red">{conjugations.ez}</td>
-                          <td className="border border-gray-300 px-4 py-3 font-mono text-kurdish-red">{conjugations.tu}</td>
-                          <td className="border border-gray-300 px-4 py-3 font-mono text-kurdish-red">{conjugations.ew}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+              <div className="grid sm:grid-cols-1 md:grid-cols-2 gap-4">
+                {commonVerbs.map((verb, index) => (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 * index }}
+                    className="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:shadow-md transition-shadow"
+                  >
+                    <div className="mb-3 pb-3 border-b border-gray-200 flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="font-mono text-kurdish-red font-bold text-lg">{verb.infinitive}</div>
+                        <div className="text-gray-600 text-sm mt-1">{verb.en}</div>
+                      </div>
+                      <AudioButton
+                        kurdishText={verb.infinitive}
+                        phoneticText={verb.en}
+                        audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(verb.infinitive)}.mp3`}
+                        label=""
+                        size="small"
+                        onPlay={handleAudioPlay}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-600 font-semibold w-12 text-sm">Ez:</span>
+                        <span className="font-mono text-kurdish-red flex-1">Ez {verb.ez}</span>
+                        <AudioButton
+                          kurdishText={`Ez ${verb.ez}`}
+                          phoneticText="I eat"
+                          audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Ez ${verb.ez}`)}.mp3`}
+                          label=""
+                          size="small"
+                          onPlay={handleAudioPlay}
+                        />
+                      </div>
+                      <div className="h-px bg-gray-200 my-1.5"></div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-600 font-semibold w-12 text-sm">Tu:</span>
+                        <span className="font-mono text-kurdish-red flex-1">Tu {verb.tu}</span>
+                        <AudioButton
+                          kurdishText={`Tu ${verb.tu}`}
+                          phoneticText="You eat"
+                          audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Tu ${verb.tu}`)}.mp3`}
+                          label=""
+                          size="small"
+                          onPlay={handleAudioPlay}
+                        />
+                      </div>
+                      <div className="h-px bg-gray-200 my-1.5"></div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-600 font-semibold w-12 text-sm">Ew:</span>
+                        <span className="font-mono text-kurdish-red flex-1">Ew {verb.ew}</span>
+                        <AudioButton
+                          kurdishText={`Ew ${verb.ew}`}
+                          phoneticText="He/She eats"
+                          audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Ew ${verb.ew}`)}.mp3`}
+                          label=""
+                          size="small"
+                          onPlay={handleAudioPlay}
+                        />
+                      </div>
+                      <div className="h-px bg-gray-200 my-1.5"></div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-600 font-semibold w-12 text-sm">Em:</span>
+                        <span className="font-mono text-kurdish-red flex-1">Em {verb.em}</span>
+                        <AudioButton
+                          kurdishText={`Em ${verb.em}`}
+                          phoneticText="We eat"
+                          audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Em ${verb.em}`)}.mp3`}
+                          label=""
+                          size="small"
+                          onPlay={handleAudioPlay}
+                        />
+                      </div>
+                      <div className="h-px bg-gray-200 my-1.5"></div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-600 font-semibold w-12 text-sm">Hûn:</span>
+                        <span className="font-mono text-kurdish-red flex-1">Hûn {verb.hun}</span>
+                        <AudioButton
+                          kurdishText={`Hûn ${verb.hun}`}
+                          phoneticText="You (plural) eat"
+                          audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Hûn ${verb.hun}`)}.mp3`}
+                          label=""
+                          size="small"
+                          onPlay={handleAudioPlay}
+                        />
+                      </div>
+                      <div className="h-px bg-gray-200 my-1.5"></div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-600 font-semibold w-12 text-sm">Ewan:</span>
+                        <span className="font-mono text-kurdish-red flex-1">Ewan {verb.ewan}</span>
+                        <AudioButton
+                          kurdishText={`Ewan ${verb.ewan}`}
+                          phoneticText="They eat"
+                          audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Ewan ${verb.ewan}`)}.mp3`}
+                          label=""
+                          size="small"
+                          onPlay={handleAudioPlay}
+                        />
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
               </div>
             </motion.div>
 

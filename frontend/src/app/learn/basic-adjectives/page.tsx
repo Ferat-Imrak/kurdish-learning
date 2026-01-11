@@ -409,7 +409,7 @@ export default function BasicAdjectivesPage() {
                     <li>= <span className="font-bold">malê mezin</span> (big house)</li>
                   </ul>
                 </div>
-                <p className="mt-4">
+                <p className="text-sm text-gray-600 mt-3 bg-green-100 p-3 rounded-lg">
                   <strong>💡 Tip:</strong> Remember: <span className="font-bold">Noun + Ending + Adjective</span> - the opposite of English! Some nouns don't need endings (like "hewa germ" - hot weather).
                 </p>
               </div>
@@ -426,7 +426,7 @@ export default function BasicAdjectivesPage() {
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
-                    <tr className="bg-kurdish-red/10">
+                    <tr className="bg-gradient-to-r from-green-100 to-teal-100">
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Kurdish</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">English</th>
                       <th className="border border-gray-300 px-4 py-3 text-left font-bold">Category</th>
