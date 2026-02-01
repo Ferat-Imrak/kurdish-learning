@@ -57,7 +57,7 @@ function getProgressData() {
     const stored = localStorage.getItem(`matching-progress-${cat}`)
     if (!stored) return false
     const rounds = JSON.parse(stored)
-    return rounds >= (cat === "master" ? 50 : 10)
+    return rounds >= (cat === "master" ? 20 : 10)
   })
 
   // Check word builder

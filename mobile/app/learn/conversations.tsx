@@ -1,18 +1,24 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   Pressable,
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+
+const SKY = '#EAF3FF';
+const SKY_DEEPER = '#d6e8ff';
+const TEXT_PRIMARY = '#0F172A';
 import { Audio } from 'expo-av';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
+import { restoreRefsFromProgress, getLearnedCount } from '../../lib/utils/progressHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -1033,15 +1039,123 @@ const audioAssets: Record<string, any> = {
   'tu-dikari-alikariya-min-biki-ji-bo-pratike': require('../../assets/audio/conversations/tu-dikari-alikariya-min-biki-ji-bo-pratike.mp3'),
 };
 
+// Conversation Card Component (Memoized)
+const ConversationCard = React.memo(({
+  conversation,
+  categoryInfo,
+  isPlaying,
+  isExpanded,
+  onPress,
+  onAudioPress,
+}: {
+  conversation: Conversation;
+  categoryInfo: ConversationCategory | undefined;
+  isPlaying: boolean;
+  isExpanded: boolean;
+  onPress: () => void;
+  onAudioPress: () => void;
+}) => {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.conversationCard,
+        pressed && styles.cardPressed,
+      ]}
+    >
+      <View style={styles.cardContent}>
+        {/* Header: Title + Category + Audio */}
+        <View style={styles.cardHeader}>
+          <View style={styles.cardHeaderLeft}>
+            <Text style={styles.cardTitle}>{conversation.title}</Text>
+            {categoryInfo && (
+              <View style={[styles.categoryPill, { backgroundColor: categoryInfo.color + '15' }]}>
+                <Text style={[styles.categoryPillText, { color: categoryInfo.color }]}>
+                  {categoryInfo.name}
+                </Text>
+              </View>
+            )}
+          </View>
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              onAudioPress();
+            }}
+            style={({ pressed }) => [
+              styles.audioButtonCircle,
+              pressed && styles.audioButtonPressed,
+              isPlaying && styles.audioButtonPlaying,
+            ]}
+          >
+            <Ionicons
+              name={isPlaying ? "volume-high" : "play-outline"}
+              size={24}
+              color={isPlaying ? "#ffffff" : "#3A86FF"}
+            />
+          </Pressable>
+        </View>
+
+        {/* Collapsed Content */}
+        <View style={styles.cardBody}>
+          <Text style={styles.cardEnglish} numberOfLines={1}>
+            {conversation.english}
+          </Text>
+          <Text style={styles.cardKurdish} numberOfLines={1}>
+            {conversation.kurdish}
+          </Text>
+        </View>
+
+        {/* Expanded Content */}
+        {isExpanded && (
+          <View style={styles.cardExpanded}>
+            <Text style={styles.cardPronunciation}>
+              {conversation.pronunciation}
+            </Text>
+            <Text style={styles.cardContext}>
+              {conversation.context}
+            </Text>
+          </View>
+        )}
+      </View>
+    </Pressable>
+  );
+});
+
+ConversationCard.displayName = 'ConversationCard';
+
 export default function DailyConversationsPage() {
   const router = useRouter();
   const { isAuthenticated } = useAuthStore();
   const { updateLessonProgress, getLessonProgress } = useProgressStore();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const startTimeRef = useRef<number>(Date.now());
-  const audioPlaysRef = useRef<number>(0);
+  
+  // Progress tracking refs - will be restored from stored progress
+  // Note: totalAudios will be set dynamically based on conversations.length
+  const getProgressConfig = () => {
+    const totalAudios = conversations.length;
+    return {
+      totalAudios,
+      hasPractice: false, // No practice section
+      audioWeight: 50,
+      timeWeight: 50,
+      audioMultiplier: totalAudios > 0 ? 50 / totalAudios : 0, // 50% / total
+      timeMultiplier: 10, // 50% / 5 minutes = 10% per minute
+    };
+  };
+  
+  // Initialize refs - will be restored in useEffect
+  const storedProgress = getLessonProgress(LESSON_ID);
+  const progressConfig = getProgressConfig();
+  const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
+  const startTimeRef = useRef<number>(estimatedStartTime);
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
+  // Base audio plays estimated from stored progress
+  const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
+  // Track previous unique audio count to calculate increment
+  const previousUniqueAudiosCountRef = useRef<number>(0);
 
   // Initialize audio mode
   useEffect(() => {
@@ -1058,7 +1172,7 @@ export default function DailyConversationsPage() {
     };
   }, [sound]);
 
-  // Mark lesson as in progress on mount
+  // Mark lesson as in progress on mount and restore refs
   useEffect(() => {
     if (!isAuthenticated) {
       router.replace('/' as any);
@@ -1066,9 +1180,31 @@ export default function DailyConversationsPage() {
     }
 
     const progress = getLessonProgress(LESSON_ID);
+    console.log('🚀 Conversations page mounted, initial progress:', {
+      progress: progress.progress,
+      status: progress.status,
+      timeSpent: progress.timeSpent,
+    });
+    
     if (progress.status === 'NOT_STARTED') {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS');
     }
+    
+    // Restore refs from stored progress (in case progress was updated after component mount)
+    const currentProgress = getLessonProgress(LESSON_ID);
+    const currentConfig = getProgressConfig();
+    const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, currentConfig);
+    startTimeRef.current = estimatedStartTime;
+    baseAudioPlaysRef.current = estimatedAudioPlays;
+    
+    console.log('🔄 Restored refs:', {
+      estimatedAudioPlays,
+      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
+      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
+      totalConversations: conversations.length,
+    });
+    
+    // Note: uniqueAudiosPlayedRef starts fresh each session, but we account for base progress
   }, [isAuthenticated]);
 
   const playAudio = async (conversationId: string, kurdishText: string) => {
@@ -1096,9 +1232,11 @@ export default function DailyConversationsPage() {
         }
       });
 
-      // Track audio play for progress
-      audioPlaysRef.current += 1;
-      handleAudioPlay();
+      // Track unique audios played (only count new ones)
+      if (!uniqueAudiosPlayedRef.current.has(conversationId)) {
+        uniqueAudiosPlayedRef.current.add(conversationId);
+        handleAudioPlay();
+      }
     } catch (error) {
       console.error('Error playing audio:', error);
       setPlayingAudio(null);
@@ -1107,307 +1245,327 @@ export default function DailyConversationsPage() {
 
   const handleAudioPlay = () => {
     const currentProgress = getLessonProgress(LESSON_ID);
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress?.timeSpent || 0;
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes;
+    
+    // Safeguard: ensure timeSpent is reasonable (max 1000 minutes = ~16 hours)
+    const safeTimeSpent = Math.min(1000, totalTimeSpent);
+    
     const progress = calculateProgress();
-    updateLessonProgress(LESSON_ID, progress, 'IN_PROGRESS');
+    updateLessonProgress(LESSON_ID, progress, 'IN_PROGRESS', undefined, safeTimeSpent);
   };
 
   const calculateProgress = () => {
-    const timeSpent = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60); // minutes
-    // Audio clicks: max 50% (20 clicks = 50%)
-    const audioProgress = Math.min(50, audioPlaysRef.current * 2.5);
-    // Time spent: max 50% (5 minutes = 50%)
-    const timeProgress = Math.min(50, timeSpent * 10);
-    return Math.min(100, audioProgress + timeProgress);
+    // Get current progress to access latest timeSpent
+    const currentProgress = getLessonProgress(LESSON_ID);
+    const totalAudios = conversations.length;
+    const audioMultiplier = totalAudios > 0 ? 50 / totalAudios : 0;
+    
+    // Calculate session time (time since restored start time)
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
+    
+    // Audio progress: new unique audios played this session only
+    const currentUniqueAudios = uniqueAudiosPlayedRef.current.size;
+    const newUniqueAudios = currentUniqueAudios - previousUniqueAudiosCountRef.current;
+    const newAudioProgress = Math.min(50, newUniqueAudios * audioMultiplier);
+    // Update previous count for next calculation
+    previousUniqueAudiosCountRef.current = currentUniqueAudios;
+    
+    // Time progress: new session time only (max 50%, 5 minutes = 50%)
+    const newTimeProgress = Math.min(50, sessionTimeMinutes * 10);
+    
+    // Get base progress from stored progress
+    const baseProgress = currentProgress?.progress || 0;
+    
+    // For lessons without practice: audio + time can reach 100%
+    // Ensure that when all audios are played, audio progress contributes its full weight
+    let effectiveAudioCount = currentUniqueAudios;
+    if (effectiveAudioCount >= totalAudios && totalAudios > 0) {
+      effectiveAudioCount = totalAudios; // Cap at total
+      // Force full audio contribution when all are played
+      const fullAudioProgress = 50;
+      const calculatedProgress = Math.min(100, baseProgress + fullAudioProgress + newTimeProgress);
+      return Math.max(baseProgress, calculatedProgress);
+    }
+    
+    // Calculate new progress from session activity
+    const calculatedProgress = Math.min(100, baseProgress + newAudioProgress + newTimeProgress);
+    
+    // Use Math.max to prevent progress from dropping due to new calculation method
+    return Math.max(baseProgress, calculatedProgress);
   };
 
-  const filteredConversations = selectedCategory === 'all'
-    ? conversations
-    : conversations.filter(conv => conv.category === selectedCategory);
+  const filteredConversations = useMemo(() => {
+    return selectedCategory === 'all'
+      ? conversations
+      : conversations.filter(conv => conv.category === selectedCategory);
+  }, [selectedCategory]);
 
-  const selectedCategoryInfo = categories.find(cat => cat.id === selectedCategory);
+  const selectedCategoryInfo = useMemo(() => {
+    return categories.find(cat => cat.id === selectedCategory);
+  }, [selectedCategory]);
 
   const progress = getLessonProgress(LESSON_ID);
   const totalConversations = conversations.length;
-  const learnedCount = Math.min(audioPlaysRef.current, totalConversations);
+  // Use getLearnedCount to get estimated base + new unique audios
+  const currentProgress = getLessonProgress(LESSON_ID);
+  const progressState = {
+    uniqueAudiosPlayed: uniqueAudiosPlayedRef.current,
+    sessionStartTime: startTimeRef.current,
+    baseProgress: currentProgress?.progress || 0,
+    baseTimeSpent: currentProgress?.timeSpent || 0,
+    practiceScore: currentProgress?.score,
+  };
+  const learnedCount = getLearnedCount(progressState, totalConversations);
+
+  // Category chips data with "All" first
+  const categoryChips = useMemo(() => {
+    return [{ id: 'all', name: 'All', icon: null as string | null }, ...categories];
+  }, []);
+
+  // Toggle card expansion
+  const toggleCardExpansion = useCallback((conversationId: string) => {
+    setExpandedCards((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(conversationId)) {
+        newSet.delete(conversationId);
+      } else {
+        newSet.add(conversationId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  // Render conversation card
+  const renderConversationCard = useCallback(({ item }: { item: Conversation }) => {
+    const categoryInfo = categories.find(cat => cat.id === item.category);
+    const isExpanded = expandedCards.has(item.id);
+    const isPlaying = playingAudio === item.id;
+
+    return (
+      <ConversationCard
+        conversation={item}
+        categoryInfo={categoryInfo}
+        isPlaying={isPlaying}
+        isExpanded={isExpanded}
+        onPress={() => toggleCardExpansion(item.id)}
+        onAudioPress={() => playAudio(item.id, item.kurdish)}
+      />
+    );
+  }, [expandedCards, playingAudio, categories]);
+
+  // Render category chip
+  const renderCategoryChip = useCallback(({ item }: { item: ConversationCategory | { id: 'all'; name: string; icon: string | null } }) => {
+    const isActive = selectedCategory === item.id;
+    const hasIcon = 'icon' in item && item.icon;
+
+    return (
+      <Pressable
+        onPress={() => setSelectedCategory(item.id)}
+        style={({ pressed }) => [
+          styles.categoryChip,
+          isActive && styles.categoryChipActive,
+          pressed && styles.chipPressed,
+        ]}
+      >
+        {hasIcon && <Text style={styles.categoryChipIcon}>{item.icon}</Text>}
+        <Text style={[
+          styles.categoryChipText,
+          isActive && styles.categoryChipTextActive,
+        ]}>
+          {item.name}
+        </Text>
+      </Pressable>
+    );
+  }, [selectedCategory]);
+
+  const keyExtractor = useCallback((item: Conversation) => item.id, []);
+  const categoryKeyExtractor = useCallback((item: ConversationCategory | { id: 'all'; name: string; icon: string | null }) => item.id, []);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Ionicons name="arrow-back" size={24} color="#3A86FF" />
-        </Pressable>
-        <Text style={styles.headerTitle}>Daily Conversations</Text>
-        <View style={styles.headerRight} />
-      </View>
-
-      {/* Progress Info */}
-      <View style={styles.progressInfoContainer}>
-        <Text style={styles.progressInfoText}>
-          <Text style={styles.progressInfoLabel}>Progress: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            progress.progress === 100 && styles.progressInfoComplete
-          ]}>
-            {Math.round(progress.progress)}%
-          </Text>
-          <Text style={styles.progressInfoSeparator}> • </Text>
-          <Text style={styles.progressInfoLabel}>Learn: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            learnedCount === totalConversations && styles.progressInfoComplete
-          ]}>
-            {learnedCount}/{totalConversations}
-          </Text>
-        </Text>
-      </View>
-
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Category Filter */}
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionIcon}>💬</Text>
-            <Text style={styles.sectionTitle}>Conversation Categories</Text>
-          </View>
-          <View style={styles.categoryContainer}>
-            <Pressable
-              onPress={() => setSelectedCategory('all')}
-              style={({ pressed }) => [
-                styles.categoryButton,
-                selectedCategory === 'all' && styles.categoryButtonActive,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={[
-                styles.categoryButtonText,
-                selectedCategory === 'all' && styles.categoryButtonTextActive,
-              ]}>
-                All
-              </Text>
-            </Pressable>
-            {categories.map((category) => (
-              <Pressable
-                key={category.id}
-                onPress={() => setSelectedCategory(category.id)}
-                style={({ pressed }) => [
-                  styles.categoryButton,
-                  selectedCategory === category.id && styles.categoryButtonActive,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={[
-                  styles.categoryButtonText,
-                  selectedCategory === category.id && styles.categoryButtonTextActive,
-                ]}>
-                  {category.name}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+    <View style={styles.pageWrap}>
+      <LinearGradient colors={[SKY, SKY_DEEPER, SKY]} style={StyleSheet.absoluteFill} />
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} style={styles.backHit} hitSlop={8}>
+            <Ionicons name="chevron-back" size={24} color={TEXT_PRIMARY} />
+          </Pressable>
+          <Text style={styles.headerTitle}>Daily Conversations</Text>
+          <View style={styles.headerRight} />
         </View>
 
-        {/* Category Description */}
-        {selectedCategoryInfo && selectedCategory !== 'all' && (
-          <View style={styles.categoryDescription}>
-            <Text style={styles.categoryDescriptionText}>
-              {selectedCategoryInfo.description}
+        <View style={styles.progressBarCard}>
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Progress</Text>
+            <Text style={[styles.progressBarValue, progress.progress === 100 && styles.progressBarComplete]}>
+              {Math.round(progress.progress)}%
             </Text>
           </View>
-        )}
-
-        {/* Conversations Grid */}
-        <View style={styles.conversationsGrid}>
-          {filteredConversations.map((conversation) => {
-            const categoryInfo = categories.find(cat => cat.id === conversation.category);
-            return (
-              <View key={conversation.id} style={styles.conversationCard}>
-                <View style={styles.conversationHeader}>
-                  <View style={styles.conversationTitleRow}>
-                    <Text style={styles.conversationIcon}>{conversation.icon}</Text>
-                    <Text style={styles.conversationTitle}>{conversation.title}</Text>
-                  </View>
-                  <View style={[styles.categoryBadge, { backgroundColor: categoryInfo?.color + '20' }]}>
-                    <Text style={[styles.categoryBadgeText, { color: categoryInfo?.color }]} numberOfLines={1}>
-                      {categoryInfo?.name}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.conversationContent}>
-                  <View style={styles.conversationRow}>
-                    <Text style={styles.conversationLabel}>English:</Text>
-                    <Text style={styles.conversationEnglish}>{conversation.english}</Text>
-                  </View>
-
-                  <View style={styles.conversationRow}>
-                    <Text style={styles.conversationLabel}>Kurdish:</Text>
-                    <Text style={styles.conversationKurdish}>{conversation.kurdish}</Text>
-                  </View>
-
-                  <View style={styles.conversationRow}>
-                    <Text style={styles.conversationLabel}>Pronunciation:</Text>
-                    <Text style={styles.conversationPronunciation}>{conversation.pronunciation}</Text>
-                  </View>
-
-                  <View style={styles.conversationContext}>
-                    <Text style={styles.conversationContextText}>{conversation.context}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.audioButtonContainer}>
-                  <Pressable
-                    onPress={() => playAudio(conversation.id, conversation.kurdish)}
-                    style={styles.audioButton}
-                  >
-                    <Ionicons
-                      name={playingAudio === conversation.id ? "volume-high" : "volume-low-outline"}
-                      size={22}
-                      color="#4b5563"
-                    />
-                  </Pressable>
-                </View>
-              </View>
-            );
-          })}
+          <View style={styles.progressBarDivider} />
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Learn</Text>
+            <Text style={[styles.progressBarValue, learnedCount === totalConversations && styles.progressBarComplete]}>
+              {learnedCount}/{totalConversations}
+            </Text>
+          </View>
         </View>
-      </ScrollView>
-    </SafeAreaView>
+
+      {/* Category Chips - Horizontal Scrollable */}
+      <View style={styles.categorySection}>
+        <FlatList
+          data={categoryChips}
+          renderItem={renderCategoryChip}
+          keyExtractor={categoryKeyExtractor}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryChipsContainer}
+          ItemSeparatorComponent={() => <View style={{ width: 8 }} />}
+        />
+      </View>
+
+      {/* Category Description */}
+      {selectedCategoryInfo && selectedCategory !== 'all' && (
+        <View style={styles.categoryDescription}>
+          <Text style={styles.categoryDescriptionText}>
+            {selectedCategoryInfo.description}
+          </Text>
+        </View>
+      )}
+
+      {/* Conversations List - FlatList for Performance */}
+      <FlatList
+        data={filteredConversations}
+        renderItem={renderConversationCard}
+        keyExtractor={keyExtractor}
+        contentContainerStyle={styles.conversationsList}
+        showsVerticalScrollIndicator={false}
+        ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+        ListFooterComponent={() => <View style={{ height: 24 }} />}
+      />
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
+  pageWrap: { flex: 1 },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 8,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    minHeight: 44,
   },
-  backButton: {
-    padding: 4,
-  },
-  pressed: {
-    opacity: 0.6,
+  backHit: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '700',
-    color: '#111827',
-    flex: 1,
-    textAlign: 'center',
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.5,
   },
-  headerRight: {
-    width: 32,
-  },
-  progressInfoContainer: {
-    marginHorizontal: 20,
-    marginTop: 12,
-    marginBottom: 12,
-  },
-  progressInfoText: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  progressInfoLabel: {
-    fontWeight: '500',
-  },
-  progressInfoValue: {
-    fontWeight: '700',
-    color: '#111827',
-  },
-  progressInfoComplete: {
-    color: '#10b981',
-  },
-  progressInfoSeparator: {
-    marginHorizontal: 4,
-  },
-  sectionCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    marginHorizontal: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  sectionHeader: {
+  headerRight: { width: 44 },
+  progressBarCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    marginHorizontal: 20,
+    marginTop: 6,
+    marginBottom: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  sectionIcon: {
-    fontSize: 24,
-    marginRight: 8,
-    flexShrink: 0,
+  progressBarSection: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  sectionTitle: {
-    fontSize: 18,
+  progressBarLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#6b7280',
+    marginBottom: 1,
+  },
+  progressBarValue: {
+    fontSize: 15,
     fontWeight: '700',
     color: '#111827',
-    flex: 1,
-    flexShrink: 1,
   },
-  categoryContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  progressBarComplete: { color: '#10b981' },
+  progressBarDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#e5e7eb',
   },
-  categoryButton: {
+  // Category Section - Compact Horizontal
+  categorySection: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  categoryChipsContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 4,
+  },
+  categoryChip: {
+    height: 38,
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: 19,
     backgroundColor: '#f3f4f6',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
-  categoryButtonActive: {
+  categoryChipActive: {
     backgroundColor: '#3A86FF',
-    borderColor: '#3A86FF',
   },
-  categoryButtonText: {
+  categoryChipIcon: {
+    fontSize: 16,
+  },
+  categoryChipText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#4b5563',
   },
-  categoryButtonTextActive: {
+  categoryChipTextActive: {
     color: '#ffffff',
+  },
+  chipPressed: {
+    opacity: 0.7,
   },
   categoryDescription: {
     paddingHorizontal: 20,
-    marginBottom: 12,
+    paddingTop: 8,
+    paddingBottom: 4,
   },
   categoryDescriptionText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#6b7280',
     textAlign: 'center',
   },
-  scrollView: {
-    flex: 1,
-  },
-  conversationsGrid: {
+  // Conversations List
+  conversationsList: {
     paddingHorizontal: 20,
-    paddingBottom: 24,
-    gap: 16,
+    paddingTop: 12,
   },
-  pressed: {
-    opacity: 0.6,
-  },
+  // Conversation Card - Modern Tap-to-Expand
   conversationCard: {
     backgroundColor: '#ffffff',
     borderRadius: 16,
@@ -1415,85 +1573,96 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e5e7eb',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  conversationHeader: {
+  cardPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.98 }],
+  },
+  cardContent: {
+    gap: 12,
+  },
+  // Card Header: Title + Category + Audio
+  cardHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    justifyContent: 'space-between',
+    gap: 12,
   },
-  conversationTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  cardHeaderLeft: {
     flex: 1,
-    marginRight: 8,
+    gap: 8,
   },
-  conversationIcon: {
-    fontSize: 20,
-    marginRight: 8,
-  },
-  conversationTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '600',
     color: '#111827',
-    flex: 1,
+    lineHeight: 24,
   },
-  categoryBadge: {
-    paddingHorizontal: 8,
+  categoryPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
-  categoryBadgeText: {
+  categoryPillText: {
     fontSize: 11,
     fontWeight: '600',
   },
-  conversationContent: {
-    gap: 8,
+  // Audio Button - Circular, Right-Aligned
+  audioButtonCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#EBF4FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
   },
-  conversationRow: {
-    gap: 4,
+  audioButtonPressed: {
+    opacity: 0.7,
   },
-  conversationLabel: {
-    fontSize: 12,
+  audioButtonPlaying: {
+    backgroundColor: '#3A86FF',
+    borderColor: '#3A86FF',
+  },
+  // Card Body - Collapsed View
+  cardBody: {
+    gap: 6,
+  },
+  cardEnglish: {
+    fontSize: 15,
+    fontWeight: '400',
     color: '#6b7280',
-    fontWeight: '500',
+    lineHeight: 22,
   },
-  conversationEnglish: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  conversationKurdish: {
-    fontSize: 16,
+  cardKurdish: {
+    fontSize: 17,
     fontWeight: '700',
     color: '#111827',
-    fontFamily: 'monospace',
+    lineHeight: 24,
   },
-  conversationPronunciation: {
-    fontSize: 13,
-    color: '#6b7280',
-    fontStyle: 'italic',
-  },
-  conversationContext: {
-    marginTop: 4,
-    paddingTop: 8,
+  // Card Expanded - Additional Info
+  cardExpanded: {
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#f3f4f6',
+    gap: 8,
   },
-  conversationContextText: {
-    fontSize: 11,
+  cardPronunciation: {
+    fontSize: 13,
+    fontStyle: 'italic',
+    color: '#6b7280',
+    lineHeight: 18,
+  },
+  cardContext: {
+    fontSize: 12,
     color: '#9ca3af',
-  },
-  audioButtonContainer: {
-    marginTop: 12,
-    alignItems: 'center',
-  },
-  audioButton: {
-    padding: 8,
+    lineHeight: 18,
   },
 });
 

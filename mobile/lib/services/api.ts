@@ -2,7 +2,7 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5001/api';
+export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5001/api';
 
 // Log API URL for debugging (only in development)
 if (__DEV__) {
@@ -15,8 +15,26 @@ export const apiClient: AxiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000, // 10 second timeout
+  timeout: 30000, // 30 second timeout (increased for slow networks)
 });
+
+/** Quick connectivity check (short timeout). Use before login to fail fast. */
+export async function checkConnection(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const client = axios.create({
+      baseURL: API_URL,
+      timeout: 6000,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await client.get('/health');
+    return { ok: true };
+  } catch (e: any) {
+    const msg = e?.code === 'ETIMEDOUT' || e?.message?.includes('timeout')
+      ? 'Connection timeout. See alert for tips.'
+      : e?.message || 'Network error';
+    return { ok: false, error: msg };
+  }
+}
 
 // Token storage keys
 const TOKEN_KEY = 'auth_token';
@@ -91,8 +109,17 @@ export const handleApiError = (error: unknown): string => {
       if (axiosError.code === 'ECONNREFUSED' || axiosError.message.includes('Network Error')) {
         return 'Network error: Cannot connect to server. Make sure:\n1. Backend server is running\n2. Using your computer\'s IP address (not localhost)\n3. Phone and computer are on same WiFi';
       }
-      if (axiosError.code === 'ETIMEDOUT') {
-        return 'Connection timeout: Server took too long to respond';
+      if (axiosError.code === 'ETIMEDOUT' || axiosError.message.includes('timeout')) {
+        const url = axiosError.config?.baseURL || API_URL;
+        const isLocalhost = url.includes('localhost') || url.includes('127.0.0.1');
+        if (isLocalhost) {
+          return 'Connection timeout: On a device/tunnel, "localhost" does not reach your computer. Set EXPO_PUBLIC_API_URL in mobile/.env to your computer\'s IP (e.g. http://192.168.1.x:8080/api). See mobile/README.md.';
+        }
+        return (
+          'Connection timeout: The app could not reach the server.\n\n' +
+          '• Using Expo Tunnel? Your phone may be on a different network. Try: run without tunnel (npx expo start) so phone and computer are on the same WiFi.\n\n' +
+          '• Or expose the backend with ngrok: run "ngrok http 8080", then set EXPO_PUBLIC_API_URL in mobile/.env to the ngrok URL (e.g. https://xxxx.ngrok.io/api) and restart Expo.'
+        );
       }
       return `Network error: ${axiosError.message}`;
     }

@@ -4,6 +4,8 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import { ArrowLeft, RotateCcw, CheckCircle, XCircle } from "lucide-react"
+import BackLink from "../../../components/BackLink"
+import { useGamesProgress } from "../../../contexts/GamesProgressContext"
 
 type Card = {
   english: string
@@ -526,22 +528,21 @@ const decks: Deck[] = [
   }
 ]
 
-// Helper functions for progress tracking
-const getProgress = (categoryName: string): { correct: number; total: number } | null => {
-  if (typeof window === 'undefined') return null
-  const stored = localStorage.getItem(`flashcards-progress-${categoryName}`)
-  return stored ? JSON.parse(stored) : null
-}
-
-const saveProgress = (categoryName: string, correct: number, total: number) => {
-  if (typeof window === 'undefined') return
-  // Get existing progress and keep the highest correct count
-  const existing = getProgress(categoryName)
-  const bestCorrect = existing ? Math.max(existing.correct, correct) : correct
-  localStorage.setItem(`flashcards-progress-${categoryName}`, JSON.stringify({ correct: bestCorrect, total }))
-}
+const FLASHCARDS_KEY = (name: string) => `flashcards-progress-${name}`
 
 export default function FlashcardsPage() {
+  const { getProgress: getGamesProgress, saveProgress: saveGamesProgress } = useGamesProgress()
+
+  const getProgress = (categoryName: string): { correct: number; total: number } | null => {
+    const raw = getGamesProgress(FLASHCARDS_KEY(categoryName))
+    return raw && typeof raw === 'object' && 'correct' in (raw as object) ? (raw as { correct: number; total: number }) : null
+  }
+
+  const saveProgress = (categoryName: string, correct: number, total: number) => {
+    const existing = getProgress(categoryName)
+    const bestCorrect = existing ? Math.max(existing.correct, correct) : correct
+    saveGamesProgress(FLASHCARDS_KEY(categoryName), { correct: bestCorrect, total })
+  }
   const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null)
   const [currentCardIndex, setCurrentCardIndex] = useState(0)
   const [isFlipped, setIsFlipped] = useState(false)
@@ -766,6 +767,13 @@ export default function FlashcardsPage() {
     setIsFlipped(!isFlipped)
   }
 
+  // Sync browser history with category vs in-game view so browser back works correctly
+  useEffect(() => {
+    const onPopState = () => resetDeck()
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
   const resetDeck = () => {
     setSelectedDeck(null)
     setCurrentCardIndex(0)
@@ -784,6 +792,7 @@ export default function FlashcardsPage() {
   }
 
   const handleDeckSelect = (deck: Deck) => {
+    window.history.pushState({ view: 'game', deck: deck.name }, '', window.location.pathname)
     // Shuffle all decks randomly for variety and challenge
     let shuffledDeck = { ...deck }
     
@@ -859,17 +868,18 @@ export default function FlashcardsPage() {
   if (!selectedDeck) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
-        <div className="container mx-auto px-4 py-6">
-          <div className="mb-6">
-            <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center">Flashcards</h1>
+        <div className="container mx-auto px-4 py-6 md:max-w-[1320px]">
+          <BackLink href="/games" label="Back to Games" />
+          <div className="mb-6 md:mb-8">
+            <h1 className="text-2xl md:text-4xl lg:text-5xl font-bold text-kurdish-red text-center">Flashcards</h1>
           </div>
 
-          <div className="max-w-4xl mx-auto">
-            <p className="text-center text-lg text-gray-700 mb-8">
+          <div className="max-w-4xl mx-auto md:max-w-none">
+            <p className="text-center text-lg text-gray-700 mb-8 md:text-base md:text-gray-500 md:mb-6">
               Choose a category to start learning with interactive flashcards!
             </p>
             
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6 md:max-w-[1320px] md:mx-auto">
               {decks.map((deck) => {
                 const totalCards = deck.name === "Master Challenge" ? allCards.length : deck.cards.length
                 const progress = getProgress(deck.name)
@@ -877,33 +887,35 @@ export default function FlashcardsPage() {
                 const progressPercentage = progress 
                   ? Math.round((progress.correct / progress.total) * 100)
                   : 0
+                const showPercent = progressPercentage > 0 || isCompleted
                 
                 return (
                   <button
                     key={deck.name}
                     onClick={() => handleDeckSelect(deck)}
-                    className="card p-6 hover:shadow-lg transition-all hover:scale-105 text-center"
+                    className="card p-6 hover:shadow-lg transition-all hover:scale-105 text-center md:p-5 md:rounded-2xl md:flex md:flex-col md:h-full md:items-stretch md:text-left md:hover:shadow-xl md:hover:-translate-y-0.5 md:hover:ring-2 md:hover:ring-primaryBlue/30 md:focus-visible:outline md:focus-visible:ring-2 md:focus-visible:ring-primaryBlue md:focus-visible:ring-offset-2 cursor-pointer"
                   >
-                    <div className="text-4xl mb-3">{deck.icon}</div>
-                    <div className="font-semibold text-gray-800">{deck.name}</div>
-                    <div className="text-sm text-gray-500 mt-1">
+                    <div className="text-4xl mb-3 md:mb-4 md:flex md:justify-center">
+                      <span className="md:w-11 md:h-11 md:rounded-2xl md:bg-primaryBlue/5 md:flex md:items-center md:justify-center md:inline-flex md:text-2xl">
+                        {deck.icon}
+                      </span>
+                    </div>
+                    <div className="font-semibold text-gray-800 md:text-lg md:font-semibold md:mb-1">{deck.name}</div>
+                    <div className="text-sm text-gray-500 mt-1 md:text-sm md:text-gray-500">
                       {totalCards} cards
                     </div>
-                    <div className="mt-2">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-xs font-medium text-gray-700">Progress</span>
-                        <span className={`text-xs font-semibold ${
-                          isCompleted ? 'text-green-600' : 'text-gray-500'
-                        }`}>
-                          {isCompleted ? 'Completed' : progress ? `${progressPercentage}%` : '0%'}
+                    <div className="mt-2 md:mt-4 md:flex-1 md:flex md:flex-col md:justify-end">
+                      {showPercent && (
+                        <span className={`text-xs font-semibold block mb-1 md:text-xs md:text-gray-500 ${isCompleted ? 'text-green-600' : ''}`}>
+                          {isCompleted ? 'Completed' : `${progressPercentage}%`}
                         </span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-1.5">
+                      )}
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 md:h-2 md:bg-gray-100">
                         <div 
-                          className={`h-1.5 rounded-full transition-all duration-300 ${
+                          className={`h-1.5 md:h-2 rounded-full transition-all duration-300 ${
                             isCompleted 
                               ? 'bg-green-600' 
-                              : 'bg-gradient-to-r from-primaryBlue to-supportLavender'
+                              : 'bg-primaryBlue'
                           }`}
                           style={{ width: `${isCompleted ? 100 : (progress ? progressPercentage : 0)}%` }}
                         ></div>
@@ -960,9 +972,10 @@ export default function FlashcardsPage() {
                   Try Same Category
                 </button>
                 <button
-                  onClick={resetDeck}
-                  className="px-6 py-3 rounded-full bg-gray-500 text-white font-semibold hover:bg-gray-600 transition-all shadow-lg hover:shadow-xl"
+                  onClick={() => { resetDeck(); window.history.back() }}
+                  className="text-gray-500 text-sm font-normal hover:text-gray-700 transition-colors inline-flex items-center gap-1.5"
                 >
+                  <ArrowLeft className="w-3.5 h-3.5" />
                   Back to Categories
                 </button>
               </div>
@@ -1020,9 +1033,10 @@ export default function FlashcardsPage() {
                   </button>
                 </div>
                 <button
-                  onClick={resetDeck}
-                  className="px-6 py-3 rounded-full bg-gray-500 text-white font-semibold hover:bg-gray-600 transition-all shadow-lg hover:shadow-xl"
+                  onClick={() => { resetDeck(); window.history.back() }}
+                  className="text-gray-500 text-sm font-normal hover:text-gray-700 transition-colors inline-flex items-center gap-1.5"
                 >
+                  <ArrowLeft className="w-3.5 h-3.5" />
                   Back to Categories
                 </button>
               </div>
@@ -1042,11 +1056,11 @@ export default function FlashcardsPage() {
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
               <button 
-                onClick={finishReview}
-                className="text-kurdish-red font-bold flex items-center gap-2"
+                onClick={() => { resetDeck(); window.history.back() }}
+                className="text-gray-500 text-sm font-normal hover:text-gray-700 transition-colors inline-flex items-center gap-1.5"
               >
-                <ArrowLeft className="w-4 h-4" />
-                Back
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Back to Categories
               </button>
             </div>
             
@@ -1122,7 +1136,7 @@ export default function FlashcardsPage() {
                   <div className="text-gray-500">Tap to reveal translation</div>
                 </div>
 
-                {/* Back of card */}
+                {/* Back of card - translation only, same style as front */}
                 <div 
                   className="absolute inset-0 p-8 flex flex-col items-center justify-center text-center backface-hidden"
                   style={{ 
@@ -1130,10 +1144,7 @@ export default function FlashcardsPage() {
                     transform: "rotateY(180deg)"
                   }}
                 >
-                  <div className="text-4xl font-bold text-primaryBlue mb-2">
-                    {reviewCard?.kurdish.charAt(0).toUpperCase() + reviewCard?.kurdish.slice(1)}
-                  </div>
-                  <div className="text-xl text-gray-600">
+                  <div className="text-4xl font-bold text-gray-800">
                     {reviewCard?.english}
                   </div>
                 </div>
@@ -1181,11 +1192,11 @@ export default function FlashcardsPage() {
         <div className="mb-6">
           <div className="flex items-center justify-between mb-4">
             <button 
-              onClick={resetDeck}
-              className="text-kurdish-red font-bold flex items-center gap-2"
+              onClick={() => { resetDeck(); window.history.back() }}
+              className="text-gray-500 text-sm font-normal hover:text-gray-700 transition-colors inline-flex items-center gap-1.5"
             >
-            <ArrowLeft className="w-4 h-4" />
-            Back
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Back to Categories
             </button>
           </div>
           
@@ -1260,7 +1271,7 @@ export default function FlashcardsPage() {
                 <div className="text-gray-500">Tap to reveal translation</div>
               </div>
 
-              {/* Back of card */}
+              {/* Back of card - translation only, same style as front */}
               <div 
                 className="absolute inset-0 p-8 flex flex-col items-center justify-center text-center backface-hidden"
                 style={{ 
@@ -1268,10 +1279,7 @@ export default function FlashcardsPage() {
                   transform: "rotateY(180deg)"
                 }}
               >
-                <div className="text-4xl font-bold text-primaryBlue mb-2">
-                  {currentCard?.kurdish.charAt(0).toUpperCase() + currentCard?.kurdish.slice(1)}
-                </div>
-                <div className="text-xl text-gray-600">
+                <div className="text-4xl font-bold text-gray-800">
                   {currentCard?.english}
                 </div>
               </div>

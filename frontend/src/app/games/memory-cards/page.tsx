@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { RotateCcw, Trophy, Clock, Star, ArrowLeft } from 'lucide-react'
+import BackLink from '../../../components/BackLink'
+import { useGamesProgress } from '../../../contexts/GamesProgressContext'
 
 interface CardPair {
   kurdish: string
@@ -520,6 +522,8 @@ const bodyPartsPairs = createCardPairs(bodyPartsCards, "bodyParts")
     ...bodyPartsPairs
   ]
 
+  const MAX_PAIRS_PER_GAME = 10
+
   // Create decks
   const decks: Deck[] = [
     {
@@ -578,36 +582,25 @@ const bodyPartsPairs = createCardPairs(bodyPartsCards, "bodyParts")
     }
   ]
 
-// Helper functions for progress tracking
-const getMemoryCardsProgress = (deckName: string): { completed: boolean; completedDifficulties: number; percentage: number } | null => {
-  if (typeof window === 'undefined') return null
-  // Check all difficulty levels - category is completed only when all 3 are done
-  const difficulties = ['easy', 'medium', 'hard']
-  let completedCount = 0
-  
-  for (const difficulty of difficulties) {
-    const stored = localStorage.getItem(`memorycards-progress-${deckName}-${difficulty}`)
-    if (stored) {
-      const progress = JSON.parse(stored)
-      if (progress.completed) {
-        completedCount++
-      }
-    }
-  }
-  
-  const percentage = Math.round((completedCount / 3) * 100)
-  const completed = completedCount === 3
-  
-  return { completed, completedDifficulties: completedCount, percentage }
-}
-
-const saveMemoryCardsProgress = (deckName: string, difficulty: string) => {
-  if (typeof window === 'undefined') return
-  const key = `memorycards-progress-${deckName}-${difficulty}`
-  localStorage.setItem(key, JSON.stringify({ completed: true, difficulty }))
-}
+const MEMORY_KEY = (deckName: string, difficulty: string) => `memorycards-progress-${deckName}-${difficulty}`
 
 export default function MemoryCardsPage() {
+  const { getProgress: getGamesProgress, saveProgress: saveGamesProgress } = useGamesProgress()
+
+  const getMemoryCardsProgress = (deckName: string): { completed: boolean; completedDifficulties: number; percentage: number } | null => {
+    const difficulties = ['easy', 'medium', 'hard']
+    let completedCount = 0
+    for (const difficulty of difficulties) {
+      const raw = getGamesProgress(MEMORY_KEY(deckName, difficulty))
+      if (raw && typeof raw === 'object' && (raw as { completed?: boolean }).completed) completedCount++
+    }
+    const percentage = Math.round((completedCount / 3) * 100)
+    return { completed: completedCount === 3, completedDifficulties: completedCount, percentage }
+  }
+
+  const saveMemoryCardsProgress = (deckName: string, difficulty: string) => {
+    saveGamesProgress(MEMORY_KEY(deckName, difficulty), { completed: true, difficulty })
+  }
   const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null)
   const [cards, setCards] = useState<Card[]>([])
   const [flippedCards, setFlippedCards] = useState<number[]>([])
@@ -616,7 +609,6 @@ export default function MemoryCardsPage() {
   const [gameWon, setGameWon] = useState(false)
   const [gameStarted, setGameStarted] = useState(false)
   const [timeElapsed, setTimeElapsed] = useState(0)
-  const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('easy')
 
   useEffect(() => {
     let timer: NodeJS.Timeout
@@ -632,12 +624,12 @@ export default function MemoryCardsPage() {
     if (matchedPairs.length === cards.length / 2 && cards.length > 0) {
       setGameWon(true)
       setGameStarted(false)
-      // Save progress when game is won
+      // Save progress when game is won (one win = deck complete, like mobile)
       if (selectedDeck) {
-        saveMemoryCardsProgress(selectedDeck.name, difficulty)
+        ;['easy', 'medium', 'hard'].forEach((d) => saveMemoryCardsProgress(selectedDeck!.name, d))
       }
     }
-  }, [matchedPairs.length, cards.length, selectedDeck, difficulty])
+  }, [matchedPairs.length, cards.length, selectedDeck])
 
   // Shuffle function
   const shuffleArray = <T,>(array: T[]): T[] => {
@@ -649,8 +641,25 @@ export default function MemoryCardsPage() {
     return shuffled
   }
 
+  // Sync browser history with in-app "category vs game" view so browser back works correctly
+  useEffect(() => {
+    const onPopState = () => {
+      setSelectedDeck(null)
+      setCards([])
+      setFlippedCards([])
+      setMatchedPairs([])
+      setMoves(0)
+      setGameWon(false)
+      setGameStarted(false)
+      setTimeElapsed(0)
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
   // Handle deck selection
   const handleDeckSelect = (deck: Deck) => {
+    window.history.pushState({ view: 'game', deck: deck.name }, '', window.location.pathname)
     // Map deck names to their corresponding pairs arrays
     const deckPairsMap: { [key: string]: CardPair[] } = {
       "Colors": colorsPairs,
@@ -674,7 +683,6 @@ export default function MemoryCardsPage() {
     }
 
     setSelectedDeck({ ...deck, pairs: sourcePairs })
-    setDifficulty('easy') // Reset to easy when selecting new deck
     setGameStarted(false)
     setGameWon(false)
   }
@@ -689,23 +697,13 @@ export default function MemoryCardsPage() {
     setGameWon(false)
     setGameStarted(false)
     setTimeElapsed(0)
-    setDifficulty('easy')
-  }
-
-  const getDifficultyPairs = () => {
-    switch (difficulty) {
-      case 'easy': return 6
-      case 'medium': return 8
-      case 'hard': return 12
-      default: return 6
-    }
   }
 
   const initializeGame = () => {
     if (!selectedDeck) return
 
-    const numPairs = Math.min(getDifficultyPairs(), selectedDeck.pairs.length)
-    const selectedPairs = selectedDeck.pairs.slice(0, numPairs)
+    const numPairs = Math.min(MAX_PAIRS_PER_GAME, selectedDeck.pairs.length)
+    const selectedPairs = shuffleArray([...selectedDeck.pairs]).slice(0, numPairs)
     
     const gameCards: Card[] = []
     selectedPairs.forEach((pair, index) => {
@@ -778,111 +776,98 @@ export default function MemoryCardsPage() {
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
-  const getGridCols = () => {
-    switch (difficulty) {
-      case 'easy': return 'grid-cols-4'
-      case 'medium': return 'grid-cols-4'
-      case 'hard': return 'grid-cols-6'
-      default: return 'grid-cols-4'
-    }
-  }
+  const getGridCols = () => 'grid-cols-4'
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
       {/* Game Area */}
-      <div className="container mx-auto px-4 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center">Memory Cards</h1>
-            </div>
-
+      <div className="container mx-auto px-4 py-8 md:max-w-[1320px]">
         {!selectedDeck ? (
           /* Deck Selection Screen */
-          <div className="max-w-4xl mx-auto">
-            <p className="text-center text-lg text-gray-700 mb-8">
-              Choose a category to start matching Kurdish words with pictures!
-            </p>
-            
-            {/* Deck Selection Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {decks.map((deck) => {
-                const progress = getMemoryCardsProgress(deck.name)
-                const isCompleted = progress?.completed || false
-                const percentage = progress?.percentage || 0
-                
-                return (
-                  <button
-                    key={deck.name}
-                    onClick={() => handleDeckSelect(deck)}
-                    className="card p-6 hover:shadow-lg transition-all hover:scale-105 text-center"
-                  >
-                    <div className="text-4xl mb-3">{deck.icon}</div>
-                    <div className="font-semibold text-gray-800">{deck.name}</div>
-                    <div className="text-sm text-gray-500 mt-1">
-                      {deck.name === "Master Challenge" 
-                        ? `${allPairs.length} pairs` 
-                        : `${deck.pairs.length} pairs`}
-                    </div>
-                    <div className="mt-2">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-xs font-medium text-gray-700">Progress</span>
-                        <span className={`text-xs font-semibold ${
-                          isCompleted ? 'text-green-600' : 'text-gray-500'
-                        }`}>
-                          {isCompleted ? 'Completed' : `${percentage}%`}
+          <>
+            <BackLink href="/games" label="Back to Games" />
+            <div className="mb-6 md:mb-8">
+              <h1 className="text-2xl md:text-4xl lg:text-5xl font-bold text-kurdish-red text-center">Memory Cards</h1>
+            </div>
+            <div className="max-w-4xl mx-auto md:max-w-none">
+              <p className="text-center text-lg text-gray-700 mb-8 md:text-base md:text-gray-500 md:mb-6">
+                Choose a category to start matching Kurdish words with pictures!
+              </p>
+              
+              {/* Deck Selection Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6 md:max-w-[1320px] md:mx-auto">
+                {decks.map((deck) => {
+                  const progress = getMemoryCardsProgress(deck.name)
+                  const isCompleted = progress?.completed || false
+                  const percentage = progress?.percentage || 0
+                  const showPercent = percentage > 0 || isCompleted
+                  
+                  return (
+                    <button
+                      key={deck.name}
+                      onClick={() => handleDeckSelect(deck)}
+                      className="card p-6 hover:shadow-lg transition-all hover:scale-105 text-center md:p-5 md:rounded-2xl md:flex md:flex-col md:h-full md:items-stretch md:text-left md:hover:shadow-xl md:hover:-translate-y-0.5 md:hover:ring-2 md:hover:ring-primaryBlue/30 md:focus-visible:outline md:focus-visible:ring-2 md:focus-visible:ring-primaryBlue md:focus-visible:ring-offset-2 cursor-pointer"
+                    >
+                      <div className="text-4xl mb-3 md:mb-4 md:flex md:justify-center">
+                        <span className="md:w-11 md:h-11 md:rounded-2xl md:bg-primaryBlue/5 md:flex md:items-center md:justify-center md:inline-flex md:text-2xl">
+                          {deck.icon}
                         </span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-1.5">
-                        <div 
-                          className={`h-1.5 rounded-full transition-all duration-300 ${
-                            isCompleted 
-                              ? 'bg-green-600' 
-                              : 'bg-gradient-to-r from-primaryBlue to-supportLavender'
-                          }`}
-                          style={{ width: `${percentage}%` }}
-                        ></div>
+                      <div className="font-semibold text-gray-800 md:text-lg md:font-semibold md:mb-1">{deck.name}</div>
+                      <div className="text-sm text-gray-500 mt-1 md:text-sm md:text-gray-500">
+                        {Math.min(MAX_PAIRS_PER_GAME, deck.name === "Master Challenge" ? allPairs.length : deck.pairs.length)} pairs
                       </div>
-                    </div>
-                  </button>
-                )
-              })}
+                      <div className="mt-2 md:mt-4 md:flex-1 md:flex md:flex-col md:justify-end">
+                        {showPercent && (
+                          <span className={`text-xs font-semibold block mb-1 md:text-xs md:text-gray-500 ${isCompleted ? 'text-green-600' : ''}`}>
+                            {isCompleted ? 'Completed' : `${percentage}%`}
+                          </span>
+                        )}
+                        <div className="w-full bg-gray-200 rounded-full h-1.5 md:h-2 md:bg-gray-100">
+                          <div 
+                            className={`h-1.5 md:h-2 rounded-full transition-all duration-300 ${
+                              isCompleted 
+                                ? 'bg-green-600' 
+                                : 'bg-primaryBlue'
+                            }`}
+                            style={{ width: `${percentage}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          </>
         ) : (
-          /* Game Screen */
+          <>
+        <button
+          type="button"
+          onClick={() => {
+            resetDeck()
+            window.history.back()
+          }}
+          className="text-gray-500 text-sm font-medium hover:text-gray-700 transition-colors inline-flex items-center gap-1.5 mb-5"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          Back to Categories
+        </button>
+        <div className="mb-6">
+          <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center">Memory Cards</h1>
+        </div>
         <div className="max-w-4xl mx-auto">
           {!gameStarted && !gameWon ? (
-              /* Difficulty Selection */
+              /* Start game (up to 10 pairs, like mobile) */
             <div className="bg-white rounded-xl shadow-lg p-8 text-center">
                 <div className="text-center mb-6">
                   <div className="text-6xl mb-4">{selectedDeck.icon}</div>
                   <h2 className="text-3xl font-bold text-textNavy mb-2">{selectedDeck.name}</h2>
                   <p className="text-gray-600">{selectedDeck.description}</p>
+                  <p className="text-gray-500 mt-2">
+                    {Math.min(MAX_PAIRS_PER_GAME, selectedDeck.pairs.length)} pairs
+                  </p>
                 </div>
-              
-              {/* Difficulty Selection */}
-              <div className="space-y-4 mb-8">
-                <h3 className="text-xl font-bold text-textNavy">Choose Difficulty:</h3>
-                <div className="grid grid-cols-3 gap-4 max-w-md mx-auto">
-                  {[
-                    { level: 'easy' as const, label: 'Easy', pairs: 6, color: 'bg-green-100 text-green-800' },
-                    { level: 'medium' as const, label: 'Medium', pairs: 8, color: 'bg-yellow-100 text-yellow-800' },
-                    { level: 'hard' as const, label: 'Hard', pairs: 12, color: 'bg-red-100 text-red-800' }
-                  ].map(({ level, label, pairs, color }) => (
-                    <button
-                      key={level}
-                      onClick={() => setDifficulty(level)}
-                      className={`p-4 rounded-xl font-bold border-2 transition-all ${
-                        difficulty === level 
-                          ? 'border-kurdish-green bg-kurdish-green text-white' 
-                          : `border-gray-300 ${color}`
-                      }`}
-                    >
-                      <div>{label}</div>
-                      <div className="text-sm opacity-80">{pairs} pairs</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
 
                 <div className="flex gap-4 justify-center">
               <button
@@ -913,8 +898,8 @@ export default function MemoryCardsPage() {
                   <div className="text-sm text-gray-600">Time</div>
                 </div>
                 <div className="bg-backgroundCream p-4 rounded-lg">
-                  <div className="text-2xl font-bold text-kurdish-red">{difficulty}</div>
-                  <div className="text-sm text-gray-600">Level</div>
+                  <div className="text-2xl font-bold text-kurdish-red">{cards.length / 2}</div>
+                  <div className="text-sm text-gray-600">Pairs</div>
                 </div>
               </div>
 
@@ -1012,6 +997,7 @@ export default function MemoryCardsPage() {
             </div>
           )}
           </div>
+          </>
         )}
       </div>
     </div>

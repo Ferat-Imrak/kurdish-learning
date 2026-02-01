@@ -9,11 +9,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+
+const SKY = '#EAF3FF';
+const SKY_DEEPER = '#d6e8ff';
+const TEXT_PRIMARY = '#0F172A';
 import { Audio } from 'expo-av';
 import { Asset } from 'expo-asset';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
+import { restoreRefsFromProgress, getLearnedCount } from '../../lib/utils/progressHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -39,26 +45,27 @@ function getAudioFilename(text: string): string {
 
 // Basic adjectives reference table
 const adjectivesTable = [
-  { ku: "mezin", en: "big/large", category: "Size", example: "malê mezin", exampleEn: "big house" },
-  { ku: "biçûk", en: "small/little", category: "Size", example: "zarokê biçûk", exampleEn: "small child" },
-  { ku: "baş", en: "good", category: "Quality", example: "pirtûka baş", exampleEn: "good book" },
-  { ku: "xirab", en: "bad", category: "Quality", example: "hewa xirab", exampleEn: "bad weather" },
-  { ku: "germ", en: "hot", category: "Temperature", example: "hewa germ", exampleEn: "hot weather" },
-  { ku: "sar", en: "cold", category: "Temperature", example: "av sar", exampleEn: "cold water" },
-  { ku: "nû", en: "new", category: "Age", example: "pirtûka nû", exampleEn: "new book" },
-  { ku: "kevn", en: "old", category: "Age", example: "malê kevn", exampleEn: "old house" },
-  { ku: "xweş", en: "nice/pleasant", category: "Quality", example: "roja xweş", exampleEn: "nice day" },
-  { ku: "zû", en: "fast/quick", category: "Speed", example: "otomobîla zû", exampleEn: "fast car" },
-  { ku: "hêdî", en: "slow", category: "Speed", example: "otomobîla hêdî", exampleEn: "slow car" },
-  { ku: "hêsan", en: "easy", category: "Difficulty", example: "karê hêsan", exampleEn: "easy work" },
-  { ku: "giran", en: "heavy/difficult", category: "Difficulty", example: "karê giran", exampleEn: "hard work" },
-  { ku: "dirêj", en: "long/tall", category: "Size", example: "darê dirêj", exampleEn: "tall tree" },
-  { ku: "kurt", en: "short", category: "Size", example: "mêra kurt", exampleEn: "short man" },
-  { ku: "fireh", en: "wide", category: "Size", example: "rêya fireh", exampleEn: "wide road" },
-  { ku: "teng", en: "narrow", category: "Size", example: "rêya teng", exampleEn: "narrow road" },
-  { ku: "sivik", en: "light", category: "Weight", example: "pirtûka sivik", exampleEn: "light book" },
-  { ku: "qelew", en: "fat/thick", category: "Size", example: "mêra qelew", exampleEn: "fat man" },
-  { ku: "tenik", en: "thin", category: "Size", example: "pirtûka tenik", exampleEn: "thin book" }
+  { ku: "mezin", en: "big/large", category: "Size", example: "malê mezin", exampleEn: "big house", usage: "Describes size" },
+  { ku: "biçûk", en: "small/little", category: "Size", example: "zarokê biçûk", exampleEn: "small child", usage: "Describes size" },
+  { ku: "baş", en: "good", category: "Quality", example: "pirtûka baş", exampleEn: "good book", usage: "Describes quality" },
+  { ku: "xirab", en: "bad", category: "Quality", example: "hewa xirab", exampleEn: "bad weather", usage: "Describes quality" },
+  { ku: "germ", en: "hot", category: "Temperature", example: "hewa germ", exampleEn: "hot weather", usage: "Describes temperature" },
+  { ku: "sar", en: "cold", category: "Temperature", example: "av sar", exampleEn: "cold water", usage: "Describes temperature" },
+  { ku: "nû", en: "new", category: "Age", example: "pirtûka nû", exampleEn: "new book", usage: "Describes age" },
+  { ku: "kevn", en: "old", category: "Age", example: "malê kevn", exampleEn: "old house", usage: "Describes age" },
+  { ku: "xweş", en: "nice/pleasant", category: "Quality", example: "roja xweş", exampleEn: "nice day", usage: "Describes pleasantness" },
+  { ku: "zû", en: "fast/quick", category: "Speed", example: "otomobîla zû", exampleEn: "fast car", usage: "Describes speed" },
+  { ku: "hêdî", en: "slow", category: "Speed", example: "otomobîla hêdî", exampleEn: "slow car", usage: "Describes speed" },
+  { ku: "hêsan", en: "easy", category: "Difficulty", example: "karê hêsan", exampleEn: "easy work", usage: "Describes difficulty" },
+  { ku: "giran", en: "heavy/difficult", category: "Difficulty", example: "karê giran", exampleEn: "hard work", usage: "Describes difficulty or weight" },
+  { ku: "dirêj", en: "long/tall", category: "Size", example: "darê dirêj", exampleEn: "tall tree", usage: "Describes length/height" },
+  { ku: "kurt", en: "short", category: "Size", example: "mêra kurt", exampleEn: "short man", usage: "Describes length/height" },
+  { ku: "fireh", en: "wide", category: "Size", example: "rêya fireh", exampleEn: "wide road", usage: "Describes width" },
+  { ku: "teng", en: "narrow", category: "Size", example: "rêya teng", exampleEn: "narrow road", usage: "Describes width" },
+  { ku: "giran", en: "heavy/difficult", category: "Weight", example: "pirtûka giran", exampleEn: "heavy book", usage: "Describes weight (can also mean difficult)" },
+  { ku: "sivik", en: "light", category: "Weight", example: "pirtûka sivik", exampleEn: "light book", usage: "Describes weight" },
+  { ku: "qelew", en: "fat/thick", category: "Size", example: "mêra qelew", exampleEn: "fat man", usage: "Describes thickness" },
+  { ku: "tenik", en: "thin", category: "Size", example: "pirtûka tenik", exampleEn: "thin book", usage: "Describes thickness" }
 ];
 
 const presentTenseExamples = [
@@ -312,8 +319,26 @@ export default function BasicAdjectivesPage() {
   const [isCompleted, setIsCompleted] = useState(false);
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const startTimeRef = useRef<number>(Date.now());
-  const audioPlaysRef = useRef<number>(0);
+  
+  // Progress tracking refs - will be restored from stored progress
+  const progressConfig = {
+    totalAudios: 28, // Total unique audios in presentTenseExamples
+    hasPractice: true,
+    audioWeight: 30,
+    timeWeight: 20,
+    practiceWeight: 50,
+    audioMultiplier: 1.07, // 30% / 28 audios ≈ 1.07% per audio
+  };
+  
+  // Initialize refs - will be restored in useEffect
+  const storedProgress = getLessonProgress(LESSON_ID);
+  const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
+  const startTimeRef = useRef<number>(estimatedStartTime);
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
+  // Base audio plays estimated from stored progress
+  const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
+  // Track previous unique audio count to calculate increment
+  const previousUniqueAudiosCountRef = useRef<number>(0);
 
   // Initialize audio mode
   useEffect(() => {
@@ -330,7 +355,7 @@ export default function BasicAdjectivesPage() {
     };
   }, [sound]);
 
-  // Mark lesson as in progress on mount
+  // Mark lesson as in progress on mount and restore refs
   useEffect(() => {
     if (!isAuthenticated) {
       router.replace('/' as any);
@@ -338,9 +363,30 @@ export default function BasicAdjectivesPage() {
     }
 
     const progress = getLessonProgress(LESSON_ID);
+    console.log('🚀 Basic-Adjectives page mounted, initial progress:', {
+      progress: progress.progress,
+      status: progress.status,
+      score: progress.score,
+      timeSpent: progress.timeSpent,
+    });
+    
     if (progress.status === 'NOT_STARTED') {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS');
     }
+    
+    // Restore refs from stored progress (in case progress was updated after component mount)
+    const currentProgress = getLessonProgress(LESSON_ID);
+    const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig);
+    startTimeRef.current = estimatedStartTime;
+    baseAudioPlaysRef.current = estimatedAudioPlays;
+    
+    console.log('🔄 Restored refs:', {
+      estimatedAudioPlays,
+      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
+      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
+    });
+    
+    // Note: uniqueAudiosPlayedRef starts fresh each session, but we account for base progress
   }, [isAuthenticated]);
 
   const playAudio = async (audioFile: string) => {
@@ -366,8 +412,12 @@ export default function BasicAdjectivesPage() {
 
       setSound(newSound);
       setPlayingAudio(audioFile);
-      audioPlaysRef.current += 1;
-      handleAudioPlay();
+      
+      // Track unique audios played (only count new ones)
+      if (!uniqueAudiosPlayedRef.current.has(audioFile)) {
+        uniqueAudiosPlayedRef.current.add(audioFile);
+        handleAudioPlay();
+      }
 
       newSound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded) {
@@ -383,22 +433,60 @@ export default function BasicAdjectivesPage() {
   };
 
   const calculateProgress = (practiceScore?: number) => {
-    const timeSpent = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60); // minutes
-    // Audio clicks: max 30% (28 examples, so ~1 click = 1.07%)
-    const audioProgress = Math.min(30, audioPlaysRef.current * 1.07);
-    // Time spent: max 20% (4 minutes = 20%)
-    const timeProgress = Math.min(20, timeSpent * 5);
-    // Practice score: max 50% (if practice exists)
-    const practiceProgress = practiceScore !== undefined ? Math.min(50, practiceScore * 0.5) : 0;
-    return Math.min(100, audioProgress + timeProgress + practiceProgress);
+    // Get current progress to access latest timeSpent
+    const currentProgress = getLessonProgress(LESSON_ID);
+    
+    // Calculate session time (time since restored start time)
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
+    
+    // Audio progress: new unique audios played this session only
+    const currentUniqueAudios = uniqueAudiosPlayedRef.current.size;
+    const newUniqueAudios = currentUniqueAudios - previousUniqueAudiosCountRef.current;
+    const newAudioProgress = Math.min(30, newUniqueAudios * 1.07);
+    // Update previous count for next calculation
+    previousUniqueAudiosCountRef.current = currentUniqueAudios;
+    
+    // Time progress: new session time only (max 20%, 4 minutes = 20%)
+    const newTimeProgress = Math.min(20, sessionTimeMinutes * 5);
+    
+    // Get base progress from stored progress
+    const baseProgress = currentProgress?.progress || 0;
+    
+    // Practice progress: only if practice was just completed
+    let practiceProgress = 0;
+    if (practiceScore !== undefined) {
+      // Practice just completed - give full 50% if passed (>= 70%)
+      if (practiceScore >= 70) {
+        practiceProgress = 50;
+      } else {
+        // Failed - proportional score (0-49%)
+        practiceProgress = Math.min(49, practiceScore * 0.5);
+      }
+    } else if (currentProgress?.status === 'COMPLETED') {
+      // Practice was completed before - give full 50%
+      practiceProgress = 50;
+    }
+    
+    // Calculate new progress from session activity
+    const calculatedProgress = Math.min(100, baseProgress + newAudioProgress + newTimeProgress + practiceProgress);
+    
+    // Use Math.max to prevent progress from dropping due to new calculation method
+    return Math.max(baseProgress, calculatedProgress);
   };
 
   const handleAudioPlay = () => {
     const currentProgress = getLessonProgress(LESSON_ID);
-    const practiceScore = currentProgress.score !== undefined ? currentProgress.score : undefined;
-    const progress = calculateProgress(practiceScore);
-    const status = currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS';
-    updateLessonProgress(LESSON_ID, progress, status);
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress?.timeSpent || 0;
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes;
+    
+    // Safeguard: ensure timeSpent is reasonable (max 1000 minutes = ~16 hours)
+    const safeTimeSpent = Math.min(1000, totalTimeSpent);
+    
+    const progress = calculateProgress(undefined); // Don't pass practice score here
+    updateLessonProgress(LESSON_ID, progress, 'IN_PROGRESS', undefined, safeTimeSpent);
   };
 
   const handleAnswerSelect = (index: number) => {
@@ -420,16 +508,25 @@ export default function BasicAdjectivesPage() {
     } else {
       // Calculate practice score percentage
       const practiceScorePercent = (score.correct / score.total) * 100;
-      const isPracticePassed = practiceScorePercent >= 80;
+      const isPracticePassed = practiceScorePercent >= 70; // Changed from 80% to 70%
       
       setIsCompleted(isPracticePassed);
       
-      // Calculate combined progress
+      // Calculate total time spent (base + session)
+      const currentProgress = getLessonProgress(LESSON_ID);
+      const baseTimeSpent = currentProgress?.timeSpent || 0;
+      const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
+      const totalTimeSpent = baseTimeSpent + sessionTimeMinutes;
+      
+      // Safeguard: ensure timeSpent is reasonable (max 1000 minutes = ~16 hours)
+      const safeTimeSpent = Math.min(1000, totalTimeSpent);
+      
+      // Calculate combined progress with practice score
       const progress = calculateProgress(practiceScorePercent);
       
       // Only mark lesson as completed if practice is passed
       const status = isPracticePassed ? 'COMPLETED' : 'IN_PROGRESS';
-      updateLessonProgress(LESSON_ID, progress, status, practiceScorePercent);
+      updateLessonProgress(LESSON_ID, progress, status, isPracticePassed ? practiceScorePercent : undefined, safeTimeSpent);
     }
   };
 
@@ -453,53 +550,51 @@ export default function BasicAdjectivesPage() {
   const progress = getLessonProgress(LESSON_ID);
   // Calculate total examples count for Learn progress (28 examples total)
   const totalExamples = examplesWithAudio.reduce((sum, section) => sum + section.examples.length, 0);
-  // Use actual audio plays count, capped at total examples
-  const learnedCount = Math.min(audioPlaysRef.current, totalExamples);
+  // Use getLearnedCount to get estimated base + new unique audios
+  const currentProgress = getLessonProgress(LESSON_ID);
+  const progressState = {
+    uniqueAudiosPlayed: uniqueAudiosPlayedRef.current,
+    sessionStartTime: startTimeRef.current,
+    baseProgress: currentProgress?.progress || 0,
+    baseTimeSpent: currentProgress?.timeSpent || 0,
+    practiceScore: currentProgress?.score,
+  };
+  const learnedCount = getLearnedCount(progressState, totalExamples);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Ionicons name="arrow-back" size={24} color="#3A86FF" />
-        </Pressable>
-        <Text style={styles.headerTitle}>Basic Adjectives</Text>
-        <View style={styles.headerRight} />
-      </View>
+    <View style={styles.pageWrap}>
+      <LinearGradient colors={[SKY, SKY_DEEPER, SKY]} style={StyleSheet.absoluteFill} />
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} style={styles.backHit} hitSlop={8}>
+            <Ionicons name="chevron-back" size={24} color={TEXT_PRIMARY} />
+          </Pressable>
+          <Text style={styles.headerTitle}>Basic Adjectives</Text>
+          <View style={styles.headerRight} />
+        </View>
 
-      {/* Progress Info */}
-      <View style={styles.progressInfoContainer}>
-        <Text style={styles.progressInfoText}>
-          <Text style={styles.progressInfoLabel}>Progress: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            progress.progress === 100 && styles.progressInfoComplete
-          ]}>
-            {Math.round(progress.progress)}%
-          </Text>
-          <Text style={styles.progressInfoSeparator}> • </Text>
-          <Text style={styles.progressInfoLabel}>Learn: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            learnedCount === totalExamples && styles.progressInfoComplete
-          ]}>
-            {learnedCount}/{totalExamples}
-          </Text>
-          <Text style={styles.progressInfoSeparator}> • </Text>
-          <Text style={styles.progressInfoLabel}>Practice: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            progress.status === 'COMPLETED' && styles.progressInfoComplete
-          ]}>
-            {progress.status === 'COMPLETED' ? 'Done' : 'Pending'}
-          </Text>
-        </Text>
-      </View>
+        <View style={styles.progressBarCard}>
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Progress</Text>
+            <Text style={[styles.progressBarValue, progress.progress === 100 && styles.progressBarComplete]}>
+              {Math.round(progress.progress)}%
+            </Text>
+          </View>
+          <View style={styles.progressBarDivider} />
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Learn</Text>
+            <Text style={[styles.progressBarValue, learnedCount === totalExamples && styles.progressBarComplete]}>
+              {learnedCount}/{totalExamples}
+            </Text>
+          </View>
+          <View style={styles.progressBarDivider} />
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Practice</Text>
+            <Text style={[styles.progressBarValue, progress.status === 'COMPLETED' && styles.progressBarComplete]}>
+              {progress.status === 'COMPLETED' ? 'Done' : 'Pending'}
+            </Text>
+          </View>
+        </View>
 
       {/* Segmented Control - Mode Toggle */}
       <View style={styles.segmentedControl}>
@@ -586,20 +681,28 @@ export default function BasicAdjectivesPage() {
                 <Text style={styles.sectionIcon}>📊</Text>
                 <Text style={styles.sectionTitle}>Basic Adjectives Reference</Text>
               </View>
-              <View style={styles.tableContainer}>
-                <View style={styles.tableHeader}>
-                  <Text style={[styles.tableHeaderText, { flex: 1.1 }]}>Kurdish</Text>
-                  <Text style={[styles.tableHeaderText, { flex: 1.3 }]}>English</Text>
-                  <Text style={[styles.tableHeaderText, { flex: 1.2 }]}>Category</Text>
-                </View>
-                {adjectivesTable.map((adj, index) => (
-                  <View key={index} style={styles.tableRow}>
-                    <Text style={[styles.tableCellKurdish, { flex: 1.1 }]}>{adj.ku}</Text>
-                    <Text style={[styles.tableCell, { flex: 1.3 }]}>{adj.en}</Text>
-                    <Text style={[styles.tableCell, { flex: 1.2 }]}>{adj.category}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+                <View style={styles.tableContainer}>
+                  <View style={styles.tableHeader}>
+                    <Text style={[styles.tableHeaderText, { flex: 1.1 }]}>Kurdish</Text>
+                    <Text style={[styles.tableHeaderText, { flex: 1.0 }]}>Category</Text>
+                    <Text style={[styles.tableHeaderText, { flex: 1.2 }]}>Example</Text>
                   </View>
-                ))}
-              </View>
+                  {adjectivesTable.map((adj, index) => (
+                    <View key={index} style={styles.tableRow}>
+                      <View style={[styles.tableCellKurdishContainer, { flex: 1.1 }]}>
+                        <Text style={styles.tableCellKurdish}>{adj.ku}</Text>
+                        <Text style={styles.tableCellEnglish}>{adj.en}</Text>
+                      </View>
+                      <Text style={[styles.tableCellCategory, { flex: 1.0 }]}>{adj.category}</Text>
+                      <View style={[styles.tableCellExampleContainer, { flex: 1.2 }]}>
+                        <Text style={styles.tableCellExample}>{adj.example}</Text>
+                        <Text style={styles.tableCellExampleTranslation}>{adj.exampleEn}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
             </View>
 
             {/* Common Mistakes */}
@@ -764,23 +867,21 @@ export default function BasicAdjectivesPage() {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
+  pageWrap: { flex: 1 },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    minHeight: 44,
   },
   backButton: {
     width: ICON_CONTAINER_WIDTH,
@@ -789,48 +890,65 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 8,
   },
+  backHit: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '700',
-    color: '#111827',
-    flex: 1,
-    textAlign: 'center',
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.5,
   },
-  headerRight: {
-    width: ICON_CONTAINER_WIDTH,
-  },
+  headerRight: { width: 44 },
   pressed: {
     opacity: 0.6,
   },
-  progressInfoContainer: {
+  progressBarCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
     marginHorizontal: 20,
-    marginTop: 12,
-    marginBottom: 12,
-    paddingVertical: 8,
+    marginTop: 6,
+    marginBottom: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  progressInfoText: {
-    fontSize: 13,
-    color: '#6b7280',
-    textAlign: 'center',
+  progressBarSection: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  progressInfoLabel: {
+  progressBarLabel: {
+    fontSize: 11,
     fontWeight: '500',
+    color: '#6b7280',
+    marginBottom: 1,
   },
-  progressInfoValue: {
+  progressBarValue: {
+    fontSize: 15,
     fontWeight: '700',
     color: '#111827',
   },
-  progressInfoComplete: {
-    color: '#10b981',
-  },
-  progressInfoSeparator: {
-    color: '#9ca3af',
+  progressBarComplete: { color: '#10b981' },
+  progressBarDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#e5e7eb',
   },
   segmentedControl: {
     flexDirection: 'row',
-    backgroundColor: '#f3f4f6',
     borderRadius: 12,
-    padding: 4,
+    gap: 8,
     marginHorizontal: 20,
     marginBottom: 12,
   },
@@ -987,6 +1105,7 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
     borderRadius: 8,
     overflow: 'hidden',
+    minWidth: width - 64,
   },
   tableHeader: {
     flexDirection: 'row',
@@ -998,23 +1117,53 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#111827',
-    padding: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    minWidth: 80,
   },
   tableRow: {
     flexDirection: 'row',
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
   },
+  tableCellKurdishContainer: {
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    minWidth: 90,
+    justifyContent: 'center',
+  },
   tableCellKurdish: {
     fontSize: 15,
     fontWeight: '700',
     color: '#dc2626',
-    padding: 12,
+    marginBottom: 4,
   },
-  tableCell: {
-    fontSize: 14,
-    color: '#374151',
-    padding: 12,
+  tableCellEnglish: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  tableCellCategory: {
+    fontSize: 12,
+    color: '#6b7280',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    minWidth: 80,
+  },
+  tableCellExampleContainer: {
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    minWidth: 100,
+    justifyContent: 'center',
+  },
+  tableCellExample: {
+    fontSize: 13,
+    fontFamily: 'monospace',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  tableCellExampleTranslation: {
+    fontSize: 12,
+    color: '#6b7280',
   },
   mistakesList: {
     gap: 12,

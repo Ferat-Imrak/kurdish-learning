@@ -110,6 +110,16 @@ export default function RegisterPage() {
         const msg = await res.json().catch(() => ({}))
         throw new Error(msg?.error || msg?.message || 'Failed to register')
       }
+
+      const data = await res.json()
+      
+      // Store backend JWT token for API calls (registration returns token)
+      if (data.token) {
+        localStorage.setItem('auth_token', data.token)
+        sessionStorage.setItem('auth_token', data.token)
+        console.log('✅ Backend JWT token stored after registration');
+      }
+
       router.push('/auth/login')
     } catch (error: any) {
       setSubmitError(error?.message || 'Failed to create account. Please try again.')

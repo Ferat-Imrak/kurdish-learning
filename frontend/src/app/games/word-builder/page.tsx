@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Shuffle, RotateCcw, CheckCircle, XCircle, Star, ArrowLeft, Play } from 'lucide-react'
+import BackLink from '../../../components/BackLink'
+import { useGamesProgress } from '../../../contexts/GamesProgressContext'
 
 interface Word {
   kurdish: string
@@ -547,28 +549,25 @@ const categories = [
   { id: "bodyParts", name: "Body Parts", icon: "👤", words: bodyPartsWords }
 ]
 
-// Helper functions for progress tracking
-const getWordBuilderProgress = (categoryId: string): { uniqueWords: number; completedWords: string[] } => {
-  if (typeof window === 'undefined') return { uniqueWords: 0, completedWords: [] }
-  const stored = localStorage.getItem(`wordbuilder-progress-${categoryId}`)
-  if (stored) {
-    const data = JSON.parse(stored)
-    // Handle both old format (number) and new format (object)
-    if (typeof data === 'number') {
-      return { uniqueWords: data, completedWords: [] }
-    }
-    return data
-  }
-  return { uniqueWords: 0, completedWords: [] }
-}
-
-const saveWordBuilderProgress = (categoryId: string, completedWords: string[]) => {
-  if (typeof window === 'undefined') return
-  const uniqueWords = completedWords.length
-  localStorage.setItem(`wordbuilder-progress-${categoryId}`, JSON.stringify({ uniqueWords, completedWords }))
-}
+const WORDBUILDER_KEY = (id: string) => `wordbuilder-progress-${id}`
 
 export default function WordBuilderPage() {
+  const { getProgress: getGamesProgress, saveProgress: saveGamesProgress } = useGamesProgress()
+
+  const getWordBuilderProgress = (categoryId: string): { uniqueWords: number; completedWords: string[] } => {
+    const raw = getGamesProgress(WORDBUILDER_KEY(categoryId))
+    if (!raw) return { uniqueWords: 0, completedWords: [] }
+    if (typeof raw === 'number') return { uniqueWords: raw, completedWords: [] }
+    const o = raw as Record<string, unknown>
+    return {
+      uniqueWords: (o.uniqueWords as number) ?? 0,
+      completedWords: Array.isArray(o.completedWords) ? (o.completedWords as string[]) : []
+    }
+  }
+
+  const saveWordBuilderProgress = (categoryId: string, completedWords: string[]) => {
+    saveGamesProgress(WORDBUILDER_KEY(categoryId), { uniqueWords: completedWords.length, completedWords })
+  }
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null)
   const [currentWord, setCurrentWord] = useState<Word | null>(null)
@@ -594,23 +593,24 @@ export default function WordBuilderPage() {
   }
 
   const handleCategorySelect = (categoryId: string) => {
+    window.history.pushState({ view: 'game', category: categoryId }, '', window.location.pathname)
     // Handle Master Challenge separately
     if (categoryId === "master") {
       const allCategoryWords = shuffleArray(allWords)
-      // Master Challenge: 50 questions
-      const targetWords = 50
+      // Master Challenge: 30 words
+      const targetWords = 30
       let uniqueWordsPool: Word[] = []
       
       if (allCategoryWords.length >= targetWords) {
-        // Use exactly 50 unique words (no repeats)
+        // Use exactly 30 unique words (no repeats)
         uniqueWordsPool = allCategoryWords.slice(0, targetWords)
       } else {
-        // Repeat words to reach exactly 50
+        // Repeat words to reach exactly 30
         const repeatsNeeded = Math.ceil(targetWords / allCategoryWords.length)
         for (let i = 0; i < repeatsNeeded; i++) {
           uniqueWordsPool = [...uniqueWordsPool, ...allCategoryWords]
         }
-        // Take exactly 50 words
+        // Take exactly 30 words
         uniqueWordsPool = uniqueWordsPool.slice(0, targetWords)
       }
       
@@ -801,8 +801,8 @@ export default function WordBuilderPage() {
         }
         
         // Check if game is completed
-        // Master Challenge: 50 questions, regular categories: 20 questions
-        const targetWords = selectedCategory === "master" ? 50 : 20
+        // Master Challenge: 30 words, regular categories: 20 words
+        const targetWords = selectedCategory === "master" ? 30 : 20
         if (updatedSessionWords.length >= targetWords) {
           setGameCompleted(true)
           return // Don't start a new word if game is completed
@@ -829,6 +829,13 @@ export default function WordBuilderPage() {
     setShuffledLetters(shuffleArray(shuffledLetters))
   }
 
+  // Sync browser history with category vs in-game view so browser back works correctly
+  useEffect(() => {
+    const onPopState = () => resetDeck()
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
   const resetDeck = () => {
     setSelectedCategory(null)
     setSelectedDeck(null)
@@ -850,53 +857,54 @@ export default function WordBuilderPage() {
   if (!selectedCategory) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
-        <div className="container mx-auto px-4 py-6">
-          <div className="mb-6">
-            <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center">Word Builder</h1>
+        <div className="container mx-auto px-4 py-6 md:max-w-[1320px]">
+          <BackLink href="/games" label="Back to Games" />
+          <div className="mb-6 md:mb-8">
+            <h1 className="text-2xl md:text-4xl lg:text-5xl font-bold text-kurdish-red text-center">Word Builder</h1>
           </div>
 
-          <div className="max-w-4xl mx-auto">
-            <p className="text-center text-lg text-gray-700 mb-8">
+          <div className="max-w-4xl mx-auto md:max-w-none">
+            <p className="text-center text-lg text-gray-700 mb-8 md:text-base md:text-gray-500 md:mb-6">
               Choose a category to start building Kurdish words letter by letter!
             </p>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6 md:max-w-[1320px] md:mx-auto">
               {/* Category cards */}
               {categories.map((category) => {
                 const progress = getWordBuilderProgress(category.id)
                 const uniqueWordsCompleted = progress.uniqueWords
-                const targetWords = Math.min(20, category.words.length)
+                const targetWords = 20
                 const isCompleted = uniqueWordsCompleted >= targetWords
                 const progressPercentage = Math.min(100, Math.round((uniqueWordsCompleted / targetWords) * 100))
+                const showPercent = progressPercentage > 0 || isCompleted
                 
                 return (
                   <button
                     key={category.id}
                     onClick={() => handleCategorySelect(category.id)}
-                    className="card p-6 hover:shadow-lg transition-all hover:scale-105 text-center"
+                    className="card p-6 hover:shadow-lg transition-all hover:scale-105 text-center md:p-5 md:rounded-2xl md:flex md:flex-col md:h-full md:items-stretch md:text-left md:hover:shadow-xl md:hover:-translate-y-0.5 md:hover:ring-2 md:hover:ring-primaryBlue/30 md:focus-visible:outline md:focus-visible:ring-2 md:focus-visible:ring-primaryBlue md:focus-visible:ring-offset-2 cursor-pointer"
                   >
-                    <div className="text-4xl mb-3">{category.icon}</div>
-                    <div className="font-semibold text-gray-800">{category.name}</div>
-                    <div className="mt-2">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className={`text-xs font-semibold ${
-                          isCompleted ? 'text-green-600' : 'text-gray-700'
-                        }`}>
-                          {isCompleted ? 'Completed' : 'Progress'}
+                    <div className="text-4xl mb-3 md:mb-4 md:flex md:justify-center">
+                      <span className="md:w-11 md:h-11 md:rounded-2xl md:bg-primaryBlue/5 md:flex md:items-center md:justify-center md:inline-flex md:text-2xl">
+                        {category.icon}
+                      </span>
+                    </div>
+                    <div className="font-semibold text-gray-800 md:text-lg md:font-semibold md:mb-1">{category.name}</div>
+                    <div className="text-sm text-gray-500 mt-1 md:text-sm md:text-gray-500">
+                      20 words
+                    </div>
+                    <div className="mt-2 md:mt-4 md:flex-1 md:flex md:flex-col md:justify-end">
+                      {showPercent && (
+                        <span className={`text-xs font-semibold block mb-1 md:text-xs md:text-gray-500 ${isCompleted ? 'text-green-600' : ''}`}>
+                          {isCompleted ? 'Completed' : `${progressPercentage}%`}
                         </span>
-                        {!isCompleted && (
-                          <span className="text-xs font-semibold text-gray-500">
-                            {progressPercentage}%
-                          </span>
-                        )}
-                        {isCompleted && <span></span>}
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-1.5">
+                      )}
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 md:h-2 md:bg-gray-100">
                         <div 
-                          className={`h-1.5 rounded-full transition-all duration-300 ${
+                          className={`h-1.5 md:h-2 rounded-full transition-all duration-300 ${
                             isCompleted 
                               ? 'bg-green-600' 
-                              : 'bg-gradient-to-r from-primaryBlue to-supportLavender'
+                              : 'bg-primaryBlue'
                           }`}
                           style={{ width: `${isCompleted ? 100 : progressPercentage}%` }}
                         ></div>
@@ -910,37 +918,37 @@ export default function WordBuilderPage() {
               {(() => {
                 const progress = getWordBuilderProgress("master")
                 const uniqueWordsCompleted = progress.uniqueWords
-                const targetWords = 50 // Master Challenge: 50 questions
+                const targetWords = 30 // Master Challenge: 30 words
                 const isCompleted = uniqueWordsCompleted >= targetWords
                 const progressPercentage = Math.min(100, Math.round((uniqueWordsCompleted / targetWords) * 100))
+                const showPercent = progressPercentage > 0 || isCompleted
                 
                 return (
                   <button
                     onClick={() => handleCategorySelect("master")}
-                    className="card p-6 hover:shadow-lg transition-all hover:scale-105 text-center"
+                    className="card p-6 hover:shadow-lg transition-all hover:scale-105 text-center md:p-5 md:rounded-2xl md:flex md:flex-col md:h-full md:items-stretch md:text-left md:hover:shadow-xl md:hover:-translate-y-0.5 md:hover:ring-2 md:hover:ring-primaryBlue/30 md:focus-visible:outline md:focus-visible:ring-2 md:focus-visible:ring-primaryBlue md:focus-visible:ring-offset-2 cursor-pointer"
                   >
-                    <div className="text-4xl mb-3">🏆</div>
-                    <div className="font-semibold text-gray-800">Master Challenge</div>
-                    <div className="mt-2">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className={`text-xs font-semibold ${
-                          isCompleted ? 'text-green-600' : 'text-gray-700'
-                        }`}>
-                          {isCompleted ? 'Completed' : 'Progress'}
+                    <div className="text-4xl mb-3 md:mb-4 md:flex md:justify-center">
+                      <span className="md:w-11 md:h-11 md:rounded-2xl md:bg-primaryBlue/5 md:flex md:items-center md:justify-center md:inline-flex md:text-2xl">
+                        🏆
+                      </span>
+                    </div>
+                    <div className="font-semibold text-gray-800 md:text-lg md:font-semibold md:mb-1">Master Challenge</div>
+                    <div className="text-sm text-gray-500 mt-1 md:text-sm md:text-gray-500">
+                      30 words
+                    </div>
+                    <div className="mt-2 md:mt-4 md:flex-1 md:flex md:flex-col md:justify-end">
+                      {showPercent && (
+                        <span className={`text-xs font-semibold block mb-1 md:text-xs md:text-gray-500 ${isCompleted ? 'text-green-600' : ''}`}>
+                          {isCompleted ? 'Completed' : `${progressPercentage}%`}
                         </span>
-                        {!isCompleted && (
-                          <span className="text-xs font-semibold text-gray-500">
-                            {progressPercentage}%
-                          </span>
-                        )}
-                        {isCompleted && <span></span>}
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-1.5">
+                      )}
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 md:h-2 md:bg-gray-100">
                         <div 
-                          className={`h-1.5 rounded-full transition-all duration-300 ${
+                          className={`h-1.5 md:h-2 rounded-full transition-all duration-300 ${
                             isCompleted 
                               ? 'bg-green-600' 
-                              : 'bg-gradient-to-r from-primaryBlue to-supportLavender'
+                              : 'bg-primaryBlue'
                           }`}
                           style={{ width: `${isCompleted ? 100 : progressPercentage}%` }}
                         ></div>
@@ -963,10 +971,17 @@ export default function WordBuilderPage() {
       <div className="container mx-auto px-4 py-8">
         <div className="mb-6">
           <div className="flex items-center justify-between mb-4">
-            <Link href="/games" className="text-kurdish-red font-bold flex items-center gap-2">
-              <ArrowLeft className="w-4 h-4" />
-              Back
-            </Link>
+            <button
+              type="button"
+              onClick={() => {
+                resetDeck()
+                window.history.back()
+              }}
+              className="text-gray-500 text-sm font-medium hover:text-gray-700 transition-colors inline-flex items-center gap-1.5"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Back to Categories
+            </button>
           </div>
           <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center">
             {currentCategory.icon} {currentCategory.name}
@@ -980,7 +995,7 @@ export default function WordBuilderPage() {
               Build Kurdish words letter by letter!
             </p>
             {selectedDeck && (() => {
-              const targetWords = selectedCategory === "master" ? 50 : 20
+              const targetWords = selectedDeck.words.length
               return (
                 <div className="text-gray-700">
                   <div className="text-lg font-semibold">

@@ -1,9 +1,14 @@
 "use client"
 
-import Link from "next/link"
+import PageContainer from "../../../components/PageContainer"
+import BackLink from "../../../components/BackLink"
 import { motion } from "framer-motion"
-import { ArrowLeft } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
 import AudioButton from "../../../components/lessons/AudioButton"
+import { useProgress } from "../../../contexts/ProgressContext"
+import { restoreRefsFromProgress } from "../../../lib/progressHelper"
+
+const LESSON_ID = '8' // Family Members lesson ID
 
 const family = [
   { en: "Family", ku: "malbat", icon: "👨‍👩‍👧‍👦", audioFile: "/audio/kurdish-tts-mp3/family/malbat.mp3" },
@@ -71,19 +76,201 @@ const familyQuestions = [
 ]
 
 export default function FamilyWordsPage() {
+  const { updateLessonProgress, getLessonProgress } = useProgress()
+  
+  // Progress tracking configuration
+  const progressConfig = {
+    totalAudios: 45, // 23 family members + 6 possessive forms + 4 age terms + 6 phrases + 6 questions
+    hasPractice: false,
+    audioWeight: 50,
+    timeWeight: 50,
+    audioMultiplier: 1.11, // 50% / 45 audios ≈ 1.11% per audio
+  }
+  
+  // Initialize refs - will be restored in useEffect
+  const storedProgress = getLessonProgress(LESSON_ID)
+  const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig)
+  const startTimeRef = useRef<number>(estimatedStartTime)
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set())
+  const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays)
+  const refsInitializedRef = useRef(false)
+  
+  // Initialize refs from stored progress - ONLY ONCE on mount
+  useEffect(() => {
+    if (refsInitializedRef.current) {
+      return
+    }
+
+    const progress = getLessonProgress(LESSON_ID)
+    console.log('🚀 Family Members page mounted, initial progress:', {
+      progress: progress.progress,
+      status: progress.status,
+      timeSpent: progress.timeSpent,
+    })
+    
+    // Mark lesson as in progress on mount
+    if (progress.status === 'NOT_STARTED') {
+      updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS')
+    }
+    
+    // Restore refs from stored progress - ONLY ONCE on mount
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig)
+    startTimeRef.current = estimatedStartTime
+    
+    // Only restore baseAudioPlaysRef if progress is significant (>20%)
+    if (currentProgress.progress > 20) {
+      baseAudioPlaysRef.current = Math.min(estimatedAudioPlays, progressConfig.totalAudios)
+    } else {
+      baseAudioPlaysRef.current = 0
+      console.log('🔄 Progress is low (<20%), resetting baseAudioPlaysRef to 0 for accurate tracking')
+    }
+    
+    // Safety check: if baseAudioPlaysRef is already at or near totalAudios, reset it
+    if (baseAudioPlaysRef.current >= progressConfig.totalAudios - 2) {
+      console.warn('⚠️ baseAudioPlaysRef is too high, resetting to 0 to prevent progress jump')
+      baseAudioPlaysRef.current = 0
+    }
+    
+    // Check if progress is 100% but status is not COMPLETED
+    if (currentProgress.progress >= 100 && currentProgress.status !== 'COMPLETED') {
+      console.log('✅ Progress is 100% but status is not COMPLETED, updating status...')
+      updateLessonProgress(LESSON_ID, currentProgress.progress, 'COMPLETED', undefined, currentProgress.timeSpent)
+    }
+    
+    // Mark refs as initialized to prevent re-initialization
+    refsInitializedRef.current = true
+    
+    console.log('🔄 Restored refs (ONCE on mount):', {
+      storedProgress: currentProgress.progress,
+      estimatedAudioPlays,
+      baseAudioPlaysRef: baseAudioPlaysRef.current,
+      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
+      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
+    })
+  }, []) // Empty dependency array - only run once on mount
+
+  const calculateProgress = () => {
+    // Get current progress to access latest timeSpent
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const storedProgress = currentProgress.progress || 0
+    
+    // Calculate total unique audios played (base + session)
+    const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size
+    
+    // Audio progress: 50% weight (1.11% per audio, max 50%)
+    const audioProgress = Math.min(progressConfig.audioWeight, totalUniqueAudios * progressConfig.audioMultiplier)
+    
+    // Time progress: 50% weight
+    const baseTimeSpent = currentProgress.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const safeTimeSpent = Math.min(1000, totalTimeSpent)
+    const timeProgress = Math.min(progressConfig.timeWeight, safeTimeSpent * 10) // 1 minute = 10%, max 50%
+    
+    // Calculate total progress (audio + time only, no practice)
+    let calculatedProgress = audioProgress + timeProgress
+    
+    // Prevent progress from decreasing - always use max of stored and calculated
+    const totalProgress = Math.max(storedProgress, calculatedProgress)
+    
+    // Round to whole number
+    const roundedProgress = Math.round(totalProgress)
+    
+    console.log('📊 Progress calculation:', {
+      totalUniqueAudios,
+      audioProgress: audioProgress.toFixed(2),
+      totalTimeSpent,
+      timeProgress: timeProgress.toFixed(2),
+      calculatedProgress: calculatedProgress.toFixed(2),
+      storedProgress,
+      totalProgress: roundedProgress,
+    })
+    
+    return roundedProgress
+  }
+
+  const handleAudioPlay = (audioKey: string) => {
+    // Track unique audios played (only count new ones) - check BEFORE adding
+    if (uniqueAudiosPlayedRef.current.has(audioKey)) {
+      // Already played this audio, don't update progress
+      console.log('🔇 Audio already played, skipping:', audioKey)
+      return
+    }
+    
+    console.log('🔊 New unique audio played:', audioKey, 'Total unique:', uniqueAudiosPlayedRef.current.size + 1)
+    uniqueAudiosPlayedRef.current.add(audioKey)
+    
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const safeTimeSpent = Math.min(1000, totalTimeSpent)
+    
+    const progress = calculateProgress()
+    
+    // Set status to COMPLETED when progress reaches 100%, otherwise preserve existing status or set to IN_PROGRESS
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS')
+    
+    console.log('📊 Progress update:', {
+      progress,
+      status,
+      uniqueAudios: uniqueAudiosPlayedRef.current.size,
+      audioKey,
+    })
+    
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent)
+  }
+  
+  // Recovery check: if progress is 100% but status is not COMPLETED
+  useEffect(() => {
+    const currentProgress = getLessonProgress(LESSON_ID)
+    if (currentProgress.progress >= 100 && currentProgress.status !== 'COMPLETED') {
+      console.log('🔧 Recovery: Progress is 100% but status is not COMPLETED, fixing...')
+      updateLessonProgress(LESSON_ID, 100, 'COMPLETED', undefined, currentProgress.timeSpent)
+    }
+  }, [getLessonProgress, updateLessonProgress])
+  
+  // Listen for progress updates (including from backend sync) and fix if needed
+  useEffect(() => {
+    const handleProgressUpdate = () => {
+      const currentProgress = getLessonProgress(LESSON_ID)
+      if (currentProgress.progress >= 100 && currentProgress.status !== 'COMPLETED') {
+        console.log('🔧 Progress update detected - fixing status to COMPLETED')
+        updateLessonProgress(LESSON_ID, 100, 'COMPLETED', undefined, currentProgress.timeSpent)
+      }
+    }
+    
+    window.addEventListener('lessonProgressUpdated', handleProgressUpdate)
+    return () => window.removeEventListener('lessonProgressUpdated', handleProgressUpdate)
+  }, [getLessonProgress, updateLessonProgress])
+  
+  // Check on page visibility change (when user comes back to tab)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const currentProgress = getLessonProgress(LESSON_ID)
+        if (currentProgress.progress >= 100 && currentProgress.status !== 'COMPLETED') {
+          console.log('👁️ Page visible - fixing status to COMPLETED')
+          updateLessonProgress(LESSON_ID, 100, 'COMPLETED', undefined, currentProgress.timeSpent)
+        }
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [getLessonProgress, updateLessonProgress])
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
-      <div className="container mx-auto px-4 py-6">
-        <div className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center">Family Members</h1>
-        </div>
+      <PageContainer>
+        <BackLink />
+        <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center mb-6">Family Members</h1>
 
         {/* Family Members */}
         <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className="card p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <span className="text-2xl">👨‍👩‍👧‍👦</span>
-            Family Members
-          </h2>
           <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {family.map((f) => (
               <motion.div key={f.en} initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className="card p-5">
@@ -94,8 +281,9 @@ export default function FamilyWordsPage() {
                     kurdishText={f.ku} 
                     phoneticText={f.en.toUpperCase()} 
                     label="Listen"
-                    size="medium"
+                    size="small"
                     audioFile={f.audioFile}
+                    onPlay={(audioKey) => handleAudioPlay(audioKey || `family-${f.ku}`)}
                   />
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-100 to-yellow-200 flex items-center justify-center shadow">
                     <span className="text-xl">{f.icon}</span>
@@ -127,6 +315,7 @@ export default function FamilyWordsPage() {
                       label="Listen"
                       size="small"
                       audioFile={item.audioFile}
+                      onPlay={(audioKey) => handleAudioPlay(audioKey || `possessive-${item.ku}`)}
                     />
                   </div>
                 </div>
@@ -156,6 +345,7 @@ export default function FamilyWordsPage() {
                       label="Listen"
                       size="small"
                       audioFile={item.audioFile}
+                      onPlay={(audioKey) => handleAudioPlay(audioKey || `age-${item.ku}`)}
                     />
                   </div>
                 </div>
@@ -185,6 +375,7 @@ export default function FamilyWordsPage() {
                       label="Listen"
                       size="small"
                       audioFile={item.audioFile}
+                      onPlay={(audioKey) => handleAudioPlay(audioKey || `phrase-${item.ku}`)}
                     />
                   </div>
                 </div>
@@ -214,6 +405,7 @@ export default function FamilyWordsPage() {
                       label="Listen"
                       size="small"
                       audioFile={item.audioFile}
+                      onPlay={(audioKey) => handleAudioPlay(audioKey || `question-${item.ku}`)}
                     />
                   </div>
                 </div>
@@ -221,7 +413,7 @@ export default function FamilyWordsPage() {
             ))}
           </div>
         </motion.div>
-      </div>
+      </PageContainer>
     </div>
   )
 }

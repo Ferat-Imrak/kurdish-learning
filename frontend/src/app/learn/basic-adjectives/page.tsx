@@ -1,11 +1,13 @@
 "use client"
 
-import Link from "next/link"
 import { useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { ArrowLeft, CheckCircle, XCircle, RotateCcw } from "lucide-react"
+import { CheckCircle, XCircle, RotateCcw } from "lucide-react"
 import AudioButton from "../../../components/lessons/AudioButton"
 import { useProgress } from "../../../contexts/ProgressContext"
+import { restoreRefsFromProgress } from "../../../lib/progressHelper"
+import PageContainer from "../../../components/PageContainer"
+import BackLink from "../../../components/BackLink"
 
 // Helper function to sanitize Kurdish text for filename lookup
 function getAudioFilename(text: string): string {
@@ -258,111 +260,321 @@ const practiceExercises = [
 
 export default function BasicAdjectivesPage() {
   const { updateLessonProgress, getLessonProgress } = useProgress()
-  const startTimeRef = useRef<number>(Date.now())
-  const audioPlaysRef = useRef<number>(0)
+  
+  // Progress tracking configuration
+  const progressConfig = {
+    totalAudios: 28, // 28 examples across 5 sections (6+6+6+6+4)
+    hasPractice: true,
+    audioWeight: 30,
+    timeWeight: 20,
+    practiceWeight: 50,
+    audioMultiplier: 1.07, // 30% / 28 audios ≈ 1.07% per audio
+  }
+  
+  // Initialize refs - will be restored in useEffect
+  const storedProgress = getLessonProgress(LESSON_ID)
+  const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig)
+  const startTimeRef = useRef<number>(estimatedStartTime)
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set())
+  const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays)
+  const refsInitializedRef = useRef(false)
+  
   const [mode, setMode] = useState<'learn' | 'practice'>('learn')
-  const [currentSection, setCurrentSection] = useState(0)
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({})
-  const [showFeedback, setShowFeedback] = useState<Record<number, boolean>>({})
+  const [currentExercise, setCurrentExercise] = useState(0)
+  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
+  const [showFeedback, setShowFeedback] = useState(false)
   const [score, setScore] = useState({ correct: 0, total: 0 })
-  const [practiceComplete, setPracticeComplete] = useState(false)
+  const [isCompleted, setIsCompleted] = useState(false)
+  const [practiceScore, setPracticeScore] = useState<number | undefined>(undefined)
+  const [practicePassed, setPracticePassed] = useState(false)
   const sectionRefs = useRef<(HTMLDivElement | null)[]>([])
 
-  // Mark lesson as in progress on mount
+  // Initialize refs from stored progress - ONLY ONCE on mount
   useEffect(() => {
+    if (refsInitializedRef.current) {
+      return
+    }
+
     const progress = getLessonProgress(LESSON_ID)
+    console.log('🚀 Basic Adjectives page mounted, initial progress:', {
+      progress: progress.progress,
+      status: progress.status,
+      score: progress.score,
+      timeSpent: progress.timeSpent,
+    })
+    
+    // Mark lesson as in progress on mount
     if (progress.status === 'NOT_STARTED') {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS')
     }
-  }, [getLessonProgress, updateLessonProgress])
+    
+    // Restore refs from stored progress - ONLY ONCE on mount
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig)
+    startTimeRef.current = estimatedStartTime
+    
+    // Only restore baseAudioPlaysRef if progress is significant (>20%)
+    if (currentProgress.progress > 20) {
+      baseAudioPlaysRef.current = Math.min(estimatedAudioPlays, progressConfig.totalAudios)
+    } else {
+      baseAudioPlaysRef.current = 0
+      console.log('🔄 Progress is low (<20%), resetting baseAudioPlaysRef to 0 for accurate tracking')
+    }
+    
+    // Safety check: if baseAudioPlaysRef is already at or near totalAudios, reset it
+    if (baseAudioPlaysRef.current >= progressConfig.totalAudios - 2) {
+      console.warn('⚠️ baseAudioPlaysRef is too high, resetting to 0 to prevent progress jump')
+      baseAudioPlaysRef.current = 0
+    }
+    
+    // Restore practice score if it exists
+    if (currentProgress.score !== undefined) {
+      setPracticeScore(currentProgress.score)
+      setPracticePassed(currentProgress.score >= 70)
+    }
+    
+    // Check if progress is 100% but status is not COMPLETED
+    if (currentProgress.progress >= 100 && currentProgress.status !== 'COMPLETED') {
+      console.log('✅ Progress is 100% but status is not COMPLETED, updating status...')
+      updateLessonProgress(LESSON_ID, currentProgress.progress, 'COMPLETED', currentProgress.score, currentProgress.timeSpent)
+    }
+    
+    // Mark refs as initialized to prevent re-initialization
+    refsInitializedRef.current = true
+    
+    console.log('🔄 Restored refs (ONCE on mount):', {
+      storedProgress: currentProgress.progress,
+      estimatedAudioPlays,
+      baseAudioPlaysRef: baseAudioPlaysRef.current,
+      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
+      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
+    })
+  }, []) // Empty dependency array - only run once on mount
 
   const calculateProgress = (practiceScore?: number) => {
-    const timeSpent = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60) // minutes
-    // Audio clicks: max 30% (10 clicks = 30%)
-    const audioProgress = Math.min(30, audioPlaysRef.current * 3)
-    // Time spent: max 20% (4 minutes = 20%)
-    const timeProgress = Math.min(20, timeSpent * 5)
-    // Practice score: max 50% (if practice exists)
-    const practiceProgress = practiceScore !== undefined ? Math.min(50, practiceScore * 0.5) : 0
-    return Math.min(100, audioProgress + timeProgress + practiceProgress)
+    // Get current progress to access latest timeSpent
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const storedProgress = currentProgress.progress || 0
+    
+    // Calculate total unique audios played (base + session)
+    const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size
+    
+    // Audio progress: 30% weight (1.07% per audio, max 30%)
+    const audioProgress = Math.min(progressConfig.audioWeight, totalUniqueAudios * progressConfig.audioMultiplier)
+    
+    // Time progress: 20% weight
+    const baseTimeSpent = currentProgress.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const safeTimeSpent = Math.min(1000, totalTimeSpent)
+    const timeProgress = Math.min(progressConfig.timeWeight, safeTimeSpent * 4) // 1 minute = 4%, max 20%
+    
+    // Practice progress: 50% weight (if practice exists)
+    let practiceProgress = 0
+    if (practiceScore !== undefined) {
+      practiceProgress = (practiceScore / 100) * progressConfig.practiceWeight
+    }
+    
+    // Calculate total progress
+    let calculatedProgress = audioProgress + timeProgress + practiceProgress
+    
+    // Special case: If practice score >= 70, force progress to 100%
+    if (practiceScore !== undefined && practiceScore >= 70) {
+      calculatedProgress = 100
+    }
+    
+    // Prevent progress from decreasing - always use max of stored and calculated
+    const totalProgress = Math.max(storedProgress, calculatedProgress)
+    
+    // Round to whole number
+    const roundedProgress = Math.round(totalProgress)
+    
+    console.log('📊 Progress calculation:', {
+      totalUniqueAudios,
+      audioProgress: audioProgress.toFixed(2),
+      totalTimeSpent,
+      timeProgress: timeProgress.toFixed(2),
+      practiceScore,
+      practiceProgress: practiceProgress.toFixed(2),
+      calculatedProgress: calculatedProgress.toFixed(2),
+      storedProgress,
+      totalProgress: roundedProgress,
+    })
+    
+    return roundedProgress
   }
 
-  const handleAnswer = (questionIndex: number, answerIndex: number) => {
-    if (showFeedback[questionIndex]) return
-    
-    setSelectedAnswers(prev => ({ ...prev, [questionIndex]: answerIndex }))
-    setShowFeedback(prev => ({ ...prev, [questionIndex]: true }))
-    
-    const isCorrect = practiceExercises[questionIndex].correct === answerIndex
+  const handleAnswerSelect = (index: number) => {
+    if (showFeedback || isCompleted) return
+    setSelectedAnswer(index)
+    setShowFeedback(true)
+    const isCorrect = index === practiceExercises[currentExercise].correct
     setScore(prev => ({
       correct: prev.correct + (isCorrect ? 1 : 0),
       total: prev.total + 1
     }))
+  }
 
-    // Check if all questions answered
-    const allAnswered = Object.keys(selectedAnswers).length + 1 === practiceExercises.length
-    if (allAnswered) {
-      setTimeout(() => {
-        // Calculate practice score percentage (score is already updated)
-        const finalScore = {
-          correct: score.correct + (isCorrect ? 1 : 0),
-          total: score.total + 1
-        }
-        const practiceScorePercent = (finalScore.correct / finalScore.total) * 100
-        const isPracticePassed = practiceScorePercent >= 80
-        
-        setPracticeComplete(isPracticePassed)
-        
-        // Calculate combined progress
-        const progress = calculateProgress(practiceScorePercent)
-        
-        // Only mark lesson as completed if practice is passed
-        const status = isPracticePassed ? 'COMPLETED' : 'IN_PROGRESS'
-        updateLessonProgress(LESSON_ID, progress, status, practiceScorePercent)
-      }, 500)
+  const handleNext = () => {
+    if (currentExercise < practiceExercises.length - 1) {
+      setCurrentExercise(prev => prev + 1)
+      setSelectedAnswer(null)
+      setShowFeedback(false)
+    } else {
+      // Calculate practice score percentage
+      const practiceScorePercent = Math.round((score.correct / score.total) * 100)
+      const isPracticePassed = practiceScorePercent >= 70 // Match pattern: >= 70 for completion
+      
+      // Always show completion screen when practice is finished, regardless of score
+      setIsCompleted(true)
+      setPracticeScore(practiceScorePercent)
+      setPracticePassed(isPracticePassed)
+      
+      // Calculate total time spent (base + session)
+      const currentProgress = getLessonProgress(LESSON_ID)
+      const baseTimeSpent = currentProgress?.timeSpent || 0
+      const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+      const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+      const safeTimeSpent = Math.min(1000, totalTimeSpent)
+      
+      // Calculate combined progress (will force to 100% if score >= 70)
+      const progress = calculateProgress(practiceScorePercent)
+      
+      // Mark lesson as completed if practice is passed (score >= 70)
+      const status = isPracticePassed ? 'COMPLETED' : 'IN_PROGRESS'
+      
+      console.log('🎯 Practice completed:', {
+        practiceScorePercent,
+        isPracticePassed,
+        progress,
+        status,
+      })
+      
+      updateLessonProgress(LESSON_ID, progress, status, practiceScorePercent, safeTimeSpent)
     }
   }
 
-  const resetPractice = () => {
-    setSelectedAnswers({})
-    setShowFeedback({})
+  const handleRestart = () => {
+    setCurrentExercise(0)
+    setSelectedAnswer(null)
+    setShowFeedback(false)
     setScore({ correct: 0, total: 0 })
-    setPracticeComplete(false)
+    setIsCompleted(false)
+    setPracticeScore(undefined)
+    setPracticePassed(false)
   }
-
-  const handleAudioPlay = () => {
-    audioPlaysRef.current += 1
+  
+  // Check if practice was already completed (score exists) but progress doesn't reflect it
+  useEffect(() => {
     const currentProgress = getLessonProgress(LESSON_ID)
-    const practiceScore = currentProgress.score !== undefined ? (currentProgress.score / 100) * 100 : undefined
-    const progress = calculateProgress(practiceScore)
-    const status = currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS'
-    updateLessonProgress(LESSON_ID, progress, status)
+    
+    // Case 1: Practice score exists and >= 70, but progress is not 100% - FORCE to 100%
+    if (currentProgress.score !== undefined && currentProgress.score >= 70 && currentProgress.progress < 100) {
+      console.log('🔍 Practice score >= 70 but progress is not 100%, forcing to 100%...', {
+        storedProgress: currentProgress.progress,
+        storedScore: currentProgress.score,
+      })
+      
+      // Force progress to 100% when practice is completed (score >= 70)
+      const shouldBeCompleted = currentProgress.score >= 70
+      const newStatus = shouldBeCompleted ? 'COMPLETED' : currentProgress.status
+      
+      console.log('🔄 Forcing progress to 100% because practice score >= 70:', {
+        newProgress: 100,
+        newStatus,
+        storedScore: currentProgress.score,
+        oldProgress: currentProgress.progress,
+      })
+      
+      // Always update to 100% if score >= 70
+      updateLessonProgress(LESSON_ID, 100, newStatus, currentProgress.score, currentProgress.timeSpent)
+    }
+  }, [getLessonProgress, updateLessonProgress])
+  
+  // Listen for progress updates (including from backend sync) and fix if needed
+  useEffect(() => {
+    const handleProgressUpdate = () => {
+      const currentProgress = getLessonProgress(LESSON_ID)
+      // If practice score >= 70 but progress is not 100%, force it to 100%
+      if (currentProgress.score !== undefined && currentProgress.score >= 70 && currentProgress.progress < 100) {
+        console.log('🔧 Progress update detected - fixing progress to 100% (score >= 70)')
+        updateLessonProgress(LESSON_ID, 100, 'COMPLETED', currentProgress.score, currentProgress.timeSpent)
+      }
+    }
+    
+    window.addEventListener('lessonProgressUpdated', handleProgressUpdate)
+    return () => window.removeEventListener('lessonProgressUpdated', handleProgressUpdate)
+  }, [getLessonProgress, updateLessonProgress])
+  
+  // Check on page visibility change (when user comes back to tab)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const currentProgress = getLessonProgress(LESSON_ID)
+        // If practice score >= 70 but progress is not 100%, force it to 100%
+        if (currentProgress.score !== undefined && currentProgress.score >= 70 && currentProgress.progress < 100) {
+          console.log('👁️ Page visible - fixing progress to 100% (score >= 70)')
+          updateLessonProgress(LESSON_ID, 100, 'COMPLETED', currentProgress.score, currentProgress.timeSpent)
+        }
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [getLessonProgress, updateLessonProgress])
+
+  const handleAudioPlay = (audioKey: string) => {
+    // Track unique audios played (only count new ones) - check BEFORE adding
+    if (uniqueAudiosPlayedRef.current.has(audioKey)) {
+      // Already played this audio, don't update progress
+      console.log('🔇 Audio already played, skipping:', audioKey)
+      return
+    }
+    
+    console.log('🔊 New unique audio played:', audioKey, 'Total unique:', uniqueAudiosPlayedRef.current.size + 1)
+    uniqueAudiosPlayedRef.current.add(audioKey)
+    
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const safeTimeSpent = Math.min(1000, totalTimeSpent)
+    
+    // Get practice score from state or stored progress
+    const currentPracticeScore = practiceScore !== undefined ? practiceScore : (currentProgress.score !== undefined ? currentProgress.score : undefined)
+    const progress = calculateProgress(currentPracticeScore)
+    
+    // Set status to COMPLETED when progress reaches 100%, otherwise preserve existing status or set to IN_PROGRESS
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS')
+    
+    console.log('📊 Progress update:', {
+      progress,
+      status,
+      uniqueAudios: uniqueAudiosPlayedRef.current.size,
+      audioKey,
+    })
+    
+    updateLessonProgress(LESSON_ID, progress, status, currentPracticeScore, safeTimeSpent)
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
-      <div className="container mx-auto px-4 py-6 max-w-5xl">
-        <div className="mb-6">
-          <Link href="/learn" className="text-kurdish-red font-bold flex items-center gap-2 mb-4">
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </Link>
-          <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center">
-            Basic Adjectives
-          </h1>
-          <p className="text-gray-600 text-center mt-2">
-            Learn how to describe things in Kurdish - size, quality, temperature, and more
-          </p>
-        </div>
+      <PageContainer>
+        <BackLink />
+        <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center mb-6">
+          Basic Adjectives
+        </h1>
 
         {/* Mode Toggle */}
-        <div className="flex justify-center gap-2 mb-6">
+        <div className="flex justify-center gap-2 mb-8">
           <button
             onClick={() => setMode('learn')}
             className={`px-6 py-2 rounded-lg font-semibold transition-all ${
               mode === 'learn'
-                ? 'bg-kurdish-red text-white shadow-lg'
-                : 'bg-white text-gray-600 hover:bg-gray-50'
+                ? 'bg-gradient-to-r from-primaryBlue to-supportLavender text-white shadow-lg'
+                : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
             }`}
           >
             Learn
@@ -371,8 +583,8 @@ export default function BasicAdjectivesPage() {
             onClick={() => setMode('practice')}
             className={`px-6 py-2 rounded-lg font-semibold transition-all ${
               mode === 'practice'
-                ? 'bg-kurdish-red text-white shadow-lg'
-                : 'bg-white text-gray-600 hover:bg-gray-50'
+                ? 'bg-gradient-to-r from-primaryBlue to-supportLavender text-white shadow-lg'
+                : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
             }`}
           >
             Practice
@@ -512,7 +724,7 @@ export default function BasicAdjectivesPage() {
                             label="Listen"
                             size="small"
                             audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(example.audioText || example.ku)}.mp3`}
-                            onPlay={handleAudioPlay}
+                            onPlay={(audioKey) => handleAudioPlay(audioKey || `example-${sectionIndex}-${index}-${example.ku}`)}
                           />
                         )}
                       </div>
@@ -526,118 +738,139 @@ export default function BasicAdjectivesPage() {
 
         {/* Practice Mode */}
         {mode === 'practice' && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="card p-6"
-          >
-            {!practiceComplete ? (
-              <>
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold text-gray-800">Practice Exercise</h2>
-                  <div className="text-sm text-gray-600">
-                    {Object.keys(selectedAnswers).length + (showFeedback[Object.keys(selectedAnswers).length] ? 1 : 0)} / {practiceExercises.length}
-                  </div>
+          <div className="max-w-3xl mx-auto">
+            {!isCompleted ? (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="card p-6"
+              >
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-800">Practice Exercise</h2>
+                  <span className="text-gray-600">
+                    Question {currentExercise + 1} of {practiceExercises.length}
+                  </span>
                 </div>
 
-                <div className="space-y-6">
-                  {practiceExercises.map((exercise, index) => {
-                    const isAnswered = showFeedback[index]
-                    const selectedAnswer = selectedAnswers[index]
-                    const isCorrect = selectedAnswer === exercise.correct
+                {/* Progress Bar */}
+                <div className="w-full bg-gray-200 rounded-full h-2 mb-6">
+                  <div
+                    className="bg-kurdish-red h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${((currentExercise + 1) / practiceExercises.length) * 100}%` }}
+                  />
+                </div>
+
+                <h3 className="text-xl font-semibold text-gray-800 mb-6">
+                  {practiceExercises[currentExercise].question}
+                </h3>
+
+                <div className="space-y-3 mb-6">
+                  {practiceExercises[currentExercise].options.map((option, index) => {
+                    const isSelected = selectedAnswer === index
+                    const isCorrect = index === practiceExercises[currentExercise].correct
+                    const showResult = showFeedback
 
                     return (
-                      <div
+                      <motion.button
                         key={index}
-                        className={`p-5 rounded-lg border-2 transition-all ${
-                          isAnswered
-                            ? isCorrect
-                              ? 'bg-green-50 border-green-300'
-                              : 'bg-red-50 border-red-300'
-                            : 'bg-white border-gray-200'
+                        onClick={() => handleAnswerSelect(index)}
+                        disabled={showFeedback}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        className={`w-full p-4 rounded-lg text-left transition-all ${
+                          showResult && isCorrect
+                            ? 'bg-green-100 border-2 border-green-500'
+                            : showResult && isSelected && !isCorrect
+                            ? 'bg-red-100 border-2 border-red-500'
+                            : !showResult && isSelected
+                            ? 'bg-blue-100 border-2 border-blue-500'
+                            : 'bg-white border-2 border-gray-200 hover:border-gray-300'
                         }`}
                       >
-                        <p className="text-lg font-semibold text-gray-800 mb-4">
-                          {index + 1}. {exercise.question}
-                        </p>
-                        <div className="grid md:grid-cols-2 gap-3 mb-3">
-                          {exercise.options.map((option, optIndex) => {
-                            const isSelected = selectedAnswer === optIndex
-                            const showCorrect = isAnswered && optIndex === exercise.correct
-                            const showWrong = isAnswered && isSelected && !isCorrect
-
-                            return (
-                              <button
-                                key={optIndex}
-                                onClick={() => !isAnswered && handleAnswer(index, optIndex)}
-                                disabled={isAnswered}
-                                className={`p-3 rounded-lg border-2 transition-all text-left ${
-                                  showCorrect
-                                    ? 'bg-green-200 border-green-500'
-                                    : showWrong
-                                    ? 'bg-red-200 border-red-500'
-                                    : isSelected
-                                    ? 'bg-blue-100 border-blue-400'
-                                    : 'bg-white border-gray-300 hover:border-kurdish-red hover:bg-gray-50'
-                                } ${isAnswered ? 'cursor-default' : 'cursor-pointer'}`}
-                              >
-                                <div className="flex items-center gap-2">
-                                  {showCorrect && <CheckCircle className="w-5 h-5 text-green-600" />}
-                                  {showWrong && <XCircle className="w-5 h-5 text-red-600" />}
-                                  <span className="font-medium">{option}</span>
-                                </div>
-                              </button>
-                            )
-                          })}
+                        <div className="flex items-center gap-3">
+                          {showResult && isCorrect && (
+                            <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                          )}
+                          {showResult && isSelected && !isCorrect && (
+                            <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                          )}
+                          <span className="font-medium text-gray-800">{option}</span>
                         </div>
-                        {isAnswered && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            className={`mt-3 p-3 rounded-lg ${
-                              isCorrect ? 'bg-green-100' : 'bg-red-100'
-                            }`}
-                          >
-                            <p className={`text-sm font-medium ${isCorrect ? 'text-green-800' : 'text-red-800'}`}>
-                              {isCorrect ? '✓ Correct!' : '✗ Incorrect'}
-                            </p>
-                            <p className="text-sm text-gray-700 mt-1">{exercise.explanation}</p>
-                          </motion.div>
-                        )}
-                      </div>
+                      </motion.button>
                     )
                   })}
                 </div>
-              </>
+
+                {showFeedback && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6"
+                  >
+                    <p className="font-semibold text-blue-900 mb-2">Explanation:</p>
+                    <p className="text-blue-800">{practiceExercises[currentExercise].explanation}</p>
+                  </motion.div>
+                )}
+
+                {showFeedback && (
+                  <motion.button
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    onClick={handleNext}
+                    className="w-full bg-kurdish-red text-white py-3 rounded-lg font-semibold hover:bg-kurdish-red/90 transition-colors"
+                  >
+                    {currentExercise < practiceExercises.length - 1 ? 'Next Question' : 'Finish'}
+                  </motion.button>
+                )}
+              </motion.div>
             ) : (
-              <div className="text-center py-8">
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="mb-6"
-                >
-                  <CheckCircle className="w-16 h-16 text-green-600 mx-auto mb-4" />
-                  <h2 className="text-2xl font-bold text-gray-800 mb-4">Practice Complete!</h2>
-                  <p className="text-lg text-gray-600 mb-2">
-                    You got <span className="font-bold text-kurdish-red">{score.correct}</span> out of{' '}
-                    <span className="font-bold">{score.total}</span> correct!
-                  </p>
-                  <div className="text-3xl font-bold text-kurdish-red">
-                    {Math.round((score.correct / score.total) * 100)}%
-                  </div>
-                </motion.div>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="card p-8 text-center"
+              >
+                {practicePassed ? (
+                  <>
+                    <div className="text-6xl mb-4">🎉</div>
+                    <h2 className="text-3xl font-bold text-gray-800 mb-4">Practice Complete!</h2>
+                    <p className="text-lg text-gray-600 mb-2">
+                      You got <span className="font-bold text-kurdish-red">{score.correct}</span> out of{' '}
+                      <span className="font-bold">{score.total}</span> correct!
+                    </p>
+                    <p className="text-4xl font-bold text-green-600 mb-2">
+                      {practiceScore}%
+                    </p>
+                    <p className="text-sm text-gray-600 mb-6">Great job! You passed the practice.</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-6xl mb-4">📚</div>
+                    <h2 className="text-3xl font-bold text-gray-800 mb-4">Practice Complete!</h2>
+                    <p className="text-lg text-gray-600 mb-2">
+                      You got <span className="font-bold text-kurdish-red">{score.correct}</span> out of{' '}
+                      <span className="font-bold">{score.total}</span> correct!
+                    </p>
+                    <p className="text-4xl font-bold text-orange-600 mb-2">
+                      {practiceScore}%
+                    </p>
+                    <p className="text-sm text-gray-600 mb-6">
+                      You need at least 70% to complete this lesson. Keep practicing!
+                    </p>
+                  </>
+                )}
                 <button
-                  onClick={resetPractice}
-                  className="bg-gradient-to-r from-primaryBlue to-supportLavender text-white font-semibold py-3 px-8 rounded-lg hover:shadow-lg transition-all flex items-center gap-2 mx-auto"
+                  onClick={handleRestart}
+                  className="inline-flex items-center gap-2 bg-kurdish-red text-white px-6 py-3 rounded-lg font-semibold hover:bg-kurdish-red/90 transition-colors"
                 >
                   <RotateCcw className="w-5 h-5" />
                   Try Again
                 </button>
-              </div>
+              </motion.div>
             )}
-          </motion.div>
+          </div>
         )}
-      </div>
+      </PageContainer>
     </div>
   )
 }

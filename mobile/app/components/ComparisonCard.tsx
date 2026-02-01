@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -7,7 +7,9 @@ interface ComparisonCardProps {
   letter2: { glyph: string; word: string; meaning: string; audioFile: string };
   tip: string;
   audioAssets: Record<string, any>;
-  onPlay?: () => void;
+  onPlay?: (audioKey: string) => void;
+  audioKey1?: string;
+  audioKey2?: string;
 }
 
 export default function ComparisonCard({
@@ -16,7 +18,26 @@ export default function ComparisonCard({
   tip,
   audioAssets,
   onPlay,
+  audioKey1,
+  audioKey2,
 }: ComparisonCardProps) {
+  const [playing1, setPlaying1] = useState(false);
+  const [playing2, setPlaying2] = useState(false);
+  const [sound1, setSound1] = useState<any>(null);
+  const [sound2, setSound2] = useState<any>(null);
+
+  // Cleanup sounds on unmount
+  useEffect(() => {
+    return () => {
+      if (sound1) {
+        sound1.unloadAsync();
+      }
+      if (sound2) {
+        sound2.unloadAsync();
+      }
+    };
+  }, [sound1, sound2]);
+
   return (
     <View style={styles.card}>
       <View style={styles.comparisonRow}>
@@ -27,40 +48,60 @@ export default function ComparisonCard({
             <Text style={styles.word}>{letter1.word}</Text>
             <Text style={styles.meaning}>{letter1.meaning}</Text>
           </View>
-          <Pressable
-            onPress={async () => {
-              // Play audio for letter1
-              const { Audio } = await import('expo-av');
-              const { Asset } = await import('expo-asset');
-              try {
-                await Audio.setAudioModeAsync({
-                  playsInSilentModeIOS: true,
-                  staysActiveInBackground: false,
-                  shouldDuckAndroid: true,
-                });
-                const audioAsset = audioAssets[letter1.audioFile];
-                if (audioAsset) {
-                  await Asset.loadAsync(audioAsset);
-                  const asset = Asset.fromModule(audioAsset);
-                  const { sound } = await Audio.Sound.createAsync(
-                    { uri: asset.localUri || asset.uri },
-                    { shouldPlay: true, volume: 1.0 }
-                  );
-                  sound.setOnPlaybackStatusUpdate((status) => {
-                    if (status.isLoaded && status.didJustFinish) {
-                      sound.unloadAsync();
-                    }
+          <View style={styles.audioButtonContainer}>
+            <Pressable
+              onPress={async () => {
+                // Play audio for letter1
+                const { Audio } = await import('expo-av');
+                const { Asset } = await import('expo-asset');
+                try {
+                  if (sound1) {
+                    await sound1.unloadAsync();
+                  }
+                  
+                  await Audio.setAudioModeAsync({
+                    playsInSilentModeIOS: true,
+                    staysActiveInBackground: false,
+                    shouldDuckAndroid: true,
                   });
-                  onPlay?.();
+                  const audioAsset = audioAssets[letter1.audioFile];
+                  if (audioAsset) {
+                    await Asset.loadAsync(audioAsset);
+                    const asset = Asset.fromModule(audioAsset);
+                    const { sound } = await Audio.Sound.createAsync(
+                      { uri: asset.localUri || asset.uri },
+                      { shouldPlay: true, volume: 1.0 }
+                    );
+                    setSound1(sound);
+                    setPlaying1(true);
+                    sound.setOnPlaybackStatusUpdate((status) => {
+                      if (status.isLoaded) {
+                        if (status.isPlaying) {
+                          setPlaying1(true);
+                        } else if (status.didJustFinish) {
+                          setPlaying1(false);
+                          sound.unloadAsync();
+                        }
+                      } else {
+                        setPlaying1(false);
+                      }
+                    });
+                    onPlay?.(audioKey1 || `comparison-${letter1.glyph}-1`);
+                  }
+                } catch (error) {
+                  console.error('Error playing audio:', error);
+                  setPlaying1(false);
                 }
-              } catch (error) {
-                console.error('Error playing audio:', error);
-              }
-            }}
-            style={styles.audioButton}
-          >
-            <Ionicons name="volume-high" size={18} color="#2563eb" />
-          </Pressable>
+              }}
+              style={styles.audioButton}
+            >
+              <Ionicons 
+                name={playing1 ? 'volume-high' : 'volume-low-outline'} 
+                size={22} 
+                color="#4b5563" 
+              />
+            </Pressable>
+          </View>
         </View>
 
         <Text style={styles.vs}>vs</Text>
@@ -72,40 +113,60 @@ export default function ComparisonCard({
             <Text style={styles.word}>{letter2.word}</Text>
             <Text style={styles.meaning}>{letter2.meaning}</Text>
           </View>
-          <Pressable
-            onPress={async () => {
-              // Play audio for letter2
-              const { Audio } = await import('expo-av');
-              const { Asset } = await import('expo-asset');
-              try {
-                await Audio.setAudioModeAsync({
-                  playsInSilentModeIOS: true,
-                  staysActiveInBackground: false,
-                  shouldDuckAndroid: true,
-                });
-                const audioAsset = audioAssets[letter2.audioFile];
-                if (audioAsset) {
-                  await Asset.loadAsync(audioAsset);
-                  const asset = Asset.fromModule(audioAsset);
-                  const { sound } = await Audio.Sound.createAsync(
-                    { uri: asset.localUri || asset.uri },
-                    { shouldPlay: true, volume: 1.0 }
-                  );
-                  sound.setOnPlaybackStatusUpdate((status) => {
-                    if (status.isLoaded && status.didJustFinish) {
-                      sound.unloadAsync();
-                    }
+          <View style={styles.audioButtonContainer}>
+            <Pressable
+              onPress={async () => {
+                // Play audio for letter2
+                const { Audio } = await import('expo-av');
+                const { Asset } = await import('expo-asset');
+                try {
+                  if (sound2) {
+                    await sound2.unloadAsync();
+                  }
+                  
+                  await Audio.setAudioModeAsync({
+                    playsInSilentModeIOS: true,
+                    staysActiveInBackground: false,
+                    shouldDuckAndroid: true,
                   });
-                  onPlay?.();
+                  const audioAsset = audioAssets[letter2.audioFile];
+                  if (audioAsset) {
+                    await Asset.loadAsync(audioAsset);
+                    const asset = Asset.fromModule(audioAsset);
+                    const { sound } = await Audio.Sound.createAsync(
+                      { uri: asset.localUri || asset.uri },
+                      { shouldPlay: true, volume: 1.0 }
+                    );
+                    setSound2(sound);
+                    setPlaying2(true);
+                    sound.setOnPlaybackStatusUpdate((status) => {
+                      if (status.isLoaded) {
+                        if (status.isPlaying) {
+                          setPlaying2(true);
+                        } else if (status.didJustFinish) {
+                          setPlaying2(false);
+                          sound.unloadAsync();
+                        }
+                      } else {
+                        setPlaying2(false);
+                      }
+                    });
+                    onPlay?.(audioKey2 || `comparison-${letter2.glyph}-2`);
+                  }
+                } catch (error) {
+                  console.error('Error playing audio:', error);
+                  setPlaying2(false);
                 }
-              } catch (error) {
-                console.error('Error playing audio:', error);
-              }
-            }}
-            style={styles.audioButton}
-          >
-            <Ionicons name="volume-high" size={18} color="#2563eb" />
-          </Pressable>
+              }}
+              style={styles.audioButton}
+            >
+              <Ionicons 
+                name={playing2 ? 'volume-high' : 'volume-low-outline'} 
+                size={22} 
+                color="#4b5563" 
+              />
+            </Pressable>
+          </View>
         </View>
       </View>
 
@@ -167,10 +228,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6b7280',
   },
+  audioButtonContainer: {
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 4,
+  },
   audioButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#eff6ff',
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   vs: {
     fontSize: 16,

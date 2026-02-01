@@ -9,11 +9,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+
+const SKY = '#EAF3FF';
+const SKY_DEEPER = '#d6e8ff';
+const TEXT_PRIMARY = '#0F172A';
 import { Audio } from 'expo-av';
 import { Asset } from 'expo-asset';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
+import { restoreRefsFromProgress } from '../../lib/utils/progressHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -139,8 +145,26 @@ export default function AnimalsPage() {
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [practiceQuestions, setPracticeQuestions] = useState<ExerciseItem[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const startTimeRef = useRef<number>(Date.now());
-  const audioPlaysRef = useRef<number>(0);
+  
+  // Progress tracking refs - will be restored from stored progress
+  const progressConfig = {
+    totalAudios: animals.length + animalQuestions.length, // 29 animals + 4 questions = 33
+    hasPractice: true,
+    audioWeight: 30,
+    timeWeight: 20,
+    practiceWeight: 50,
+    audioMultiplier: 0.91, // 30% / 33 audios ≈ 0.91% per audio
+  };
+  
+  // Initialize refs - will be restored in useEffect
+  const storedProgress = getLessonProgress(LESSON_ID);
+  const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
+  const startTimeRef = useRef<number>(estimatedStartTime);
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
+  // Base audio plays estimated from stored progress
+  const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
+  // Track previous unique audio count to calculate increment
+  const previousUniqueAudiosCountRef = useRef<number>(0);
 
   // Generate all possible exercise items from animals
   const allExerciseItems: ExerciseItem[] = animals.map(animal => ({
@@ -165,7 +189,7 @@ export default function AnimalsPage() {
     };
   }, [sound]);
 
-  // Mark lesson as in progress on mount
+  // Mark lesson as in progress on mount and restore refs
   useEffect(() => {
     if (!isAuthenticated) {
       router.replace('/' as any);
@@ -173,9 +197,30 @@ export default function AnimalsPage() {
     }
 
     const progress = getLessonProgress(LESSON_ID);
+    console.log('🚀 Animals page mounted, initial progress:', {
+      progress: progress.progress,
+      status: progress.status,
+      score: progress.score,
+      timeSpent: progress.timeSpent,
+    });
+    
     if (progress.status === 'NOT_STARTED') {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS');
     }
+    
+    // Restore refs from stored progress (in case progress was updated after component mount)
+    const currentProgress = getLessonProgress(LESSON_ID);
+    const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig);
+    startTimeRef.current = estimatedStartTime;
+    baseAudioPlaysRef.current = estimatedAudioPlays;
+    
+    console.log('🔄 Restored refs:', {
+      estimatedAudioPlays,
+      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
+      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
+    });
+    
+    // Note: uniqueAudiosPlayedRef starts fresh each session, but we account for base progress
   }, [isAuthenticated]);
 
   // Initialize first exercise when switching to practice mode
@@ -252,8 +297,12 @@ export default function AnimalsPage() {
 
       setSound(newSound);
       setPlayingAudio(audioKey);
-      audioPlaysRef.current += 1;
-      handleAudioPlay();
+      
+      // Track unique audios played (only count new ones)
+      if (!uniqueAudiosPlayedRef.current.has(audioKey)) {
+        uniqueAudiosPlayedRef.current.add(audioKey);
+        handleAudioPlay();
+      }
 
       newSound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded) {
@@ -269,22 +318,103 @@ export default function AnimalsPage() {
   };
 
   const calculateProgress = (practiceScore?: number) => {
-    const timeSpent = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60); // minutes
-    // Audio clicks: max 30% (29 animals + 4 questions = 33, so ~1 click = 0.91%)
-    const audioProgress = Math.min(30, audioPlaysRef.current * 0.91);
-    // Time spent: max 20% (4 minutes = 20%)
-    const timeProgress = Math.min(20, timeSpent * 5);
-    // Practice score: max 50% (if practice exists)
-    const practiceProgress = practiceScore !== undefined ? Math.min(50, practiceScore * 0.5) : 0;
-    return Math.min(100, audioProgress + timeProgress + practiceProgress);
+    // Get current progress to access latest timeSpent
+    const currentProgress = getLessonProgress(LESSON_ID);
+    
+    console.log('🔍 calculateProgress called:', {
+      practiceScore,
+      storedProgress: currentProgress?.progress,
+      storedScore: currentProgress?.score,
+      storedTimeSpent: currentProgress?.timeSpent,
+    });
+    
+    // Calculate session time (time since restored start time)
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
+    
+    // Audio progress: new unique audios played this session only
+    // Each unique audio = 0.91% (30% max / 33 total audios)
+    // CRITICAL: Only calculate progress for the INCREMENT since last update
+    const currentUniqueAudios = uniqueAudiosPlayedRef.current.size;
+    const newUniqueAudios = currentUniqueAudios - previousUniqueAudiosCountRef.current;
+    const newAudioProgress = Math.min(30, newUniqueAudios * 0.91);
+    // Update previous count for next calculation
+    previousUniqueAudiosCountRef.current = currentUniqueAudios;
+    
+    // Time progress: new session time only (max 20%, 4 minutes = 20%)
+    const newTimeProgress = Math.min(20, sessionTimeMinutes * 5);
+    
+    // Get base progress from stored progress
+    const baseProgress = currentProgress?.progress || 0;
+    
+    // CRITICAL FIX: Only use score for practice if practice was JUST completed (practiceScore parameter)
+    // The backend stores overall progress in the score field, so we can't trust stored score
+    // as practice completion unless we know practice was just done.
+    // Ignore stored score entirely - only use it if practiceScore is explicitly provided.
+    // If practice is completed (status is COMPLETED and score >= 70%), give full 50% practice progress
+    const storedPracticeScore = currentProgress?.score;
+    const isPracticeCompleted = currentProgress?.status === 'COMPLETED' && storedPracticeScore !== undefined && storedPracticeScore >= 70;
+    const practiceProgress = practiceScore !== undefined 
+      ? (practiceScore >= 70 ? 50 : Math.min(50, practiceScore * 0.5))  // If score >= 70%, give full 50%; otherwise scale
+      : (isPracticeCompleted ? 50 : 0);  // If practice was completed before with >= 70%, give full 50%
+    
+    // Calculate new total: base progress (which already includes previous audio+time) + new audio + new time + practice
+    // But we need to cap audio+time at 50% total
+    // If baseProgress is already at 50%, we can't add more audio+time progress
+    const currentAudioTimeProgress = Math.min(50, baseProgress); // Cap base at 50% (audio+time max)
+    // Only add NEW progress (newAudioProgress + newTimeProgress), not the full base
+    const newAudioTimeProgress = Math.min(50 - currentAudioTimeProgress, newAudioProgress + newTimeProgress);
+    const totalAudioTime = Math.min(50, currentAudioTimeProgress + newAudioTimeProgress);
+    const totalProgress = Math.min(100, totalAudioTime + practiceProgress);
+    
+    console.log('📊 Progress calculation breakdown:', {
+      newUniqueAudios,
+      newAudioProgress: newAudioProgress.toFixed(2),
+      sessionTimeMinutes,
+      newTimeProgress: newTimeProgress.toFixed(2),
+      baseProgress,
+      currentAudioTimeProgress: currentAudioTimeProgress.toFixed(2),
+      newAudioTimeProgress: newAudioTimeProgress.toFixed(2),
+      practiceProgress: practiceProgress.toFixed(2),
+      totalAudioTime: totalAudioTime.toFixed(2),
+      totalProgress: totalProgress.toFixed(2),
+    });
+    
+    return totalProgress;
   };
 
   const handleAudioPlay = () => {
     const currentProgress = getLessonProgress(LESSON_ID);
-    const practiceScore = currentProgress.score !== undefined ? currentProgress.score : undefined;
-    const progress = calculateProgress(practiceScore);
+    console.log('🎵 handleAudioPlay called:', {
+      uniqueAudiosCount: uniqueAudiosPlayedRef.current.size,
+      currentProgress: currentProgress?.progress,
+      currentScore: currentProgress?.score,
+    });
+    
+    // Don't pass practiceScore - we're just playing audio, not doing practice
+    const progress = calculateProgress(undefined);
     const status = currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS';
-    updateLessonProgress(LESSON_ID, progress, status);
+    
+    // Calculate time spent for this update
+    // timeSpent is stored in minutes, so we just add session time
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
+    const baseTimeSpent = currentProgress.timeSpent || 0;
+    // Safeguard: if baseTimeSpent is unreasonably large (> 10000 minutes = ~166 hours), reset it
+    // This prevents corrupted values from breaking the calculation
+    const safeBaseTimeSpent = baseTimeSpent > 10000 ? 0 : Math.max(baseTimeSpent, 0);
+    const totalTimeSpent = safeBaseTimeSpent + Math.max(sessionTimeMinutes, 0);
+    
+    // CRITICAL: Never use stored score - it's overall progress, not practice
+    // Only pass score when practice is explicitly completed
+    const existingPracticeScore = undefined;
+    
+    console.log('💾 Updating progress:', {
+      progress: progress.toFixed(2),
+      status,
+      existingPracticeScore,
+      totalTimeSpent,
+    });
+    
+    updateLessonProgress(LESSON_ID, progress, status, existingPracticeScore, totalTimeSpent);
   };
 
   // Generate 20 unique questions for practice session
@@ -325,11 +455,17 @@ export default function AnimalsPage() {
       setTimeout(() => {
         setIsCompleted(true);
         const practiceScorePercent = (newCorrect / newTotal) * 100;
-        const isPracticePassed = practiceScorePercent >= 80;
+        const isPracticePassed = practiceScorePercent >= 70; // Changed from 80% to 70% for consistency with frontend
         
         const progress = calculateProgress(practiceScorePercent);
         const status = isPracticePassed ? 'COMPLETED' : 'IN_PROGRESS';
-        updateLessonProgress(LESSON_ID, progress, status, practiceScorePercent);
+        
+        // Calculate time spent for this update
+        const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
+        const baseTimeSpent = getLessonProgress(LESSON_ID).timeSpent || 0;
+        const totalTimeSpent = baseTimeSpent + sessionTimeMinutes;
+        
+        updateLessonProgress(LESSON_ID, progress, status, practiceScorePercent, totalTimeSpent);
       }, 500);
     }
   };
@@ -349,54 +485,52 @@ export default function AnimalsPage() {
 
   // Calculate total examples count for Learn progress
   const totalExamples = animals.length + animalQuestions.length;
-  const learnedCount = Math.min(audioPlaysRef.current, totalExamples);
+  // Learned count = estimated base count from previous sessions + new unique audios this session
+  // Use baseAudioPlaysRef which stores the estimated audio plays from previous sessions
+  const estimatedBaseCount = Math.min(baseAudioPlaysRef.current, totalExamples);
+  const newUniqueAudios = uniqueAudiosPlayedRef.current.size;
+  const learnedCount = Math.min(estimatedBaseCount + newUniqueAudios, totalExamples);
 
   const progress = getLessonProgress(LESSON_ID);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Ionicons name="arrow-back" size={24} color="#3A86FF" />
-        </Pressable>
-        <Text style={styles.headerTitle}>Animals</Text>
-        <View style={styles.headerRight} />
-      </View>
+    <View style={styles.pageWrap}>
+      <LinearGradient colors={[SKY, SKY_DEEPER, SKY]} style={StyleSheet.absoluteFill} />
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} style={styles.backHit} hitSlop={8}>
+            <Ionicons name="chevron-back" size={24} color={TEXT_PRIMARY} />
+          </Pressable>
+          <Text style={styles.headerTitle}>Animals</Text>
+          <View style={styles.headerRight} />
+        </View>
 
-      {/* Progress Info */}
-      <View style={styles.progressInfoContainer}>
-        <Text style={styles.progressInfoText}>
-          <Text style={styles.progressInfoLabel}>Progress: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            progress.progress === 100 && styles.progressInfoComplete
-          ]}>
-            {Math.round(progress.progress)}%
-          </Text>
-          <Text style={styles.progressInfoSeparator}> • </Text>
-          <Text style={styles.progressInfoLabel}>Learn: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            learnedCount === totalExamples && styles.progressInfoComplete
-          ]}>
-            {learnedCount}/{totalExamples}
-          </Text>
-          <Text style={styles.progressInfoSeparator}> • </Text>
-          <Text style={styles.progressInfoLabel}>Practice: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            progress.status === 'COMPLETED' && styles.progressInfoComplete
-          ]}>
-            {progress.score !== undefined ? `${Math.round(progress.score)}%` : (progress.status === 'COMPLETED' ? 'Done' : 'Pending')}
-          </Text>
-        </Text>
-      </View>
+        <View style={styles.progressBarCard}>
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Progress</Text>
+            <Text style={[styles.progressBarValue, progress.progress === 100 && styles.progressBarComplete]}>
+              {Math.round(progress.progress)}%
+            </Text>
+          </View>
+          <View style={styles.progressBarDivider} />
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Learn</Text>
+            <Text style={[styles.progressBarValue, learnedCount === totalExamples && styles.progressBarComplete]}>
+              {learnedCount}/{totalExamples}
+            </Text>
+          </View>
+          <View style={styles.progressBarDivider} />
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Practice</Text>
+            <Text style={[styles.progressBarValue, progress.status === 'COMPLETED' && styles.progressBarComplete]}>
+              {progress.status === 'COMPLETED'
+                ? 'Done'
+                : (progress.score !== undefined
+                    ? (progress.score >= 70 ? 'Done' : `${Math.round(progress.score)}%`)
+                    : 'Pending')}
+            </Text>
+          </View>
+        </View>
 
       {/* Segmented Control - Mode Toggle */}
       <View style={styles.segmentedControl}>
@@ -524,29 +658,41 @@ export default function AnimalsPage() {
         ) : (
           /* Practice Mode - Listening Exercise */
           <View style={styles.practiceContainer}>
-            {isCompleted ? (
-              <View style={styles.completionCard}>
-                <Text style={styles.completionEmoji}>🎉</Text>
-                <Text style={styles.completionTitle}>Great job!</Text>
-                <Text style={styles.completionText}>
-                  You got <Text style={styles.completionScore}>{score.correct}</Text> out of{' '}
-                  <Text style={styles.completionTotal}>{QUESTIONS_PER_SESSION}</Text> correct!
-                </Text>
-                <Text style={styles.completionPercentage}>
-                  {Math.round((score.correct / QUESTIONS_PER_SESSION) * 100)}%
-                </Text>
-                <Pressable
-                  onPress={handleRestart}
-                  style={({ pressed }) => [
-                    styles.restartButton,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Ionicons name="refresh" size={20} color="#fff" />
-                  <Text style={styles.restartButtonText}>Try Again</Text>
-                </Pressable>
-              </View>
-            ) : currentExercise ? (
+            {isCompleted ? (() => {
+              const practiceScorePercent = Math.round((score.correct / QUESTIONS_PER_SESSION) * 100);
+              const isPassed = practiceScorePercent >= 70;
+              
+              return (
+                <View style={styles.completionCard}>
+                  <Text style={styles.completionEmoji}>{isPassed ? '🎉' : '📚'}</Text>
+                  <Text style={styles.completionTitle}>
+                    {isPassed ? 'Great job!' : 'Keep practicing!'}
+                  </Text>
+                  <Text style={styles.completionText}>
+                    You got <Text style={styles.completionScore}>{score.correct}</Text> out of{' '}
+                    <Text style={styles.completionTotal}>{QUESTIONS_PER_SESSION}</Text> correct!
+                  </Text>
+                  <Text style={styles.completionPercentage}>
+                    {practiceScorePercent}%
+                  </Text>
+                  {!isPassed && (
+                    <Text style={[styles.completionText, { marginTop: 8, fontSize: 14, color: '#666' }]}>
+                      You need at least 70% to complete this lesson. Keep trying!
+                    </Text>
+                  )}
+                  <Pressable
+                    onPress={handleRestart}
+                    style={({ pressed }) => [
+                      styles.restartButton,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Ionicons name="refresh" size={20} color="#fff" />
+                    <Text style={styles.restartButtonText}>Try Again</Text>
+                  </Pressable>
+                </View>
+              );
+            })() : currentExercise ? (
               <View style={styles.practiceCard}>
                 {/* Score and Progress */}
                 <View style={styles.practiceHeader}>
@@ -644,73 +790,79 @@ export default function AnimalsPage() {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
+  pageWrap: { flex: 1 },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    minHeight: 44,
   },
-  backButton: {
-    width: ICON_CONTAINER_WIDTH,
-    height: ICON_CONTAINER_WIDTH,
-    alignItems: 'center',
+  backHit: {
+    width: 44,
+    height: 44,
     justifyContent: 'center',
-    borderRadius: 8,
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '700',
-    color: '#111827',
-    flex: 1,
-    textAlign: 'center',
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.5,
   },
-  headerRight: {
-    width: ICON_CONTAINER_WIDTH,
-  },
-  pressed: {
-    opacity: 0.6,
-  },
-  progressInfoContainer: {
+  headerRight: { width: 44 },
+  progressBarCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
     marginHorizontal: 20,
-    marginTop: 12,
-    marginBottom: 12,
-    paddingVertical: 8,
+    marginTop: 6,
+    marginBottom: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  progressInfoText: {
-    fontSize: 13,
-    color: '#6b7280',
-    textAlign: 'center',
+  progressBarSection: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  progressInfoLabel: {
+  progressBarLabel: {
+    fontSize: 11,
     fontWeight: '500',
+    color: '#6b7280',
+    marginBottom: 1,
   },
-  progressInfoValue: {
+  progressBarValue: {
+    fontSize: 15,
     fontWeight: '700',
     color: '#111827',
   },
-  progressInfoComplete: {
-    color: '#10b981',
+  progressBarComplete: { color: '#10b981' },
+  progressBarDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#e5e7eb',
   },
-  progressInfoSeparator: {
-    color: '#9ca3af',
-  },
+  pressed: { opacity: 0.6 },
   segmentedControl: {
     flexDirection: 'row',
-    backgroundColor: '#f3f4f6',
     borderRadius: 12,
-    padding: 4,
+    gap: 8,
     marginHorizontal: 20,
     marginBottom: 12,
   },

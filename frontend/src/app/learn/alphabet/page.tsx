@@ -1,11 +1,13 @@
 "use client"
 
-import Link from "next/link"
+import PageContainer from "../../../components/PageContainer"
+import BackLink from "../../../components/BackLink"
 import { motion } from "framer-motion"
-import { ArrowLeft, HelpCircle, ArrowLeftRight } from "lucide-react"
+import { HelpCircle, ArrowLeftRight } from "lucide-react"
 import AudioButton from "../../../components/lessons/AudioButton"
 import { useProgress } from "../../../contexts/ProgressContext"
-import { useEffect } from "react"
+import { useEffect, useRef, useState } from "react"
+import { restoreRefsFromProgress } from "../../../lib/progressHelper"
 
 // Helper function to get audio filename for each letter
 function getLetterAudioFile(glyph: string): string {
@@ -84,59 +86,194 @@ const letters = [
 
 export default function AlphabetPage() {
   const { updateLessonProgress, getLessonProgress } = useProgress()
+  
+  // Progress tracking refs - will be restored from stored progress
+  const progressConfig = {
+    totalAudios: 37, // 31 letters + 6 comparison audios (3 cards × 2 letters each)
+    hasPractice: false,
+    audioWeight: 50,
+    timeWeight: 50,
+    audioMultiplier: 1.35, // 50% / 37 audios ≈ 1.35% per audio
+  }
+  
+  // Initialize refs - will be restored in useEffect
+  const storedProgress = getLessonProgress(LESSON_ID)
+  const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig)
+  const startTimeRef = useRef<number>(estimatedStartTime)
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set())
+  // Base audio plays estimated from stored progress
+  const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays)
 
-  // Mark lesson as in progress on mount
+  // Track if refs have been initialized to prevent re-initialization on re-renders
+  const refsInitializedRef = useRef(false)
+
   useEffect(() => {
+    // Only initialize refs once on mount, not on every re-render
+    if (refsInitializedRef.current) {
+      return
+    }
+
     const progress = getLessonProgress(LESSON_ID)
+    console.log('🚀 Alphabet page mounted, initial progress:', {
+      progress: progress.progress,
+      status: progress.status,
+      score: progress.score,
+      timeSpent: progress.timeSpent,
+    })
+    
+    // Mark lesson as in progress on mount
     if (progress.status === 'NOT_STARTED') {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS')
     }
-  }, [getLessonProgress, updateLessonProgress])
+    
+    // Restore refs from stored progress - ONLY ONCE on mount
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig)
+    startTimeRef.current = estimatedStartTime
+    
+    // Only restore baseAudioPlaysRef if progress is significant (>20%)
+    // Otherwise, reset to 0 to avoid inflating counts from small progress values
+    // This prevents the issue where small progress percentages get incorrectly converted to base audio counts
+    // For example: 14% progress → ~10 base audios, which inflates the learned count
+    // Also cap it at totalAudios to prevent it from exceeding the maximum
+    if (currentProgress.progress > 20) {
+      baseAudioPlaysRef.current = Math.min(estimatedAudioPlays, progressConfig.totalAudios)
+    } else {
+      baseAudioPlaysRef.current = 0
+      console.log('🔄 Progress is low (<20%), resetting baseAudioPlaysRef to 0 for accurate tracking')
+    }
+    
+    // Safety check: if baseAudioPlaysRef is already at or near totalAudios, reset it
+    // This prevents the issue where progress jumps to 100% immediately
+    if (baseAudioPlaysRef.current >= progressConfig.totalAudios - 2) {
+      console.warn('⚠️ baseAudioPlaysRef is too high, resetting to 0 to prevent progress jump')
+      baseAudioPlaysRef.current = 0
+    }
+    
+    // Mark refs as initialized to prevent re-initialization
+    refsInitializedRef.current = true
+    
+    console.log('🔄 Restored refs (ONCE on mount):', {
+      storedProgress: currentProgress.progress,
+      estimatedAudioPlays,
+      baseAudioPlaysRef: baseAudioPlaysRef.current,
+      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
+      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
+    })
+    
+    // If progress is already 100% but status is not COMPLETED, update it
+    if (currentProgress.progress >= 100 && currentProgress.status !== 'COMPLETED') {
+      console.log('✅ Progress is 100% but status is not COMPLETED, updating status...')
+      updateLessonProgress(LESSON_ID, currentProgress.progress, 'COMPLETED', currentProgress.score, currentProgress.timeSpent)
+    }
+  }, []) // Empty dependency array - only run once on mount
 
-  const handleAudioPlay = () => {
-    const progress = getLessonProgress(LESSON_ID)
-    const newProgress = Math.min(100, progress.progress + 2)
-    const newStatus = newProgress >= 100 ? 'COMPLETED' : 'IN_PROGRESS'
-    updateLessonProgress(LESSON_ID, newProgress, newStatus)
+  const calculateProgress = () => {
+    // Get current progress to access latest timeSpent
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress?.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    
+    // Calculate progress from ACTUAL STATE, not from stored baseProgress
+    
+    // 1. Audio progress: Calculate from total unique audios played (base + new)
+    const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size
+    const effectiveUniqueAudios = Math.min(totalUniqueAudios, progressConfig.totalAudios)
+    const audioProgress = Math.min(50, (effectiveUniqueAudios / progressConfig.totalAudios) * 50)
+    
+    // 2. Time progress: Calculate from total time spent (max 50%, 5 minutes = 50%)
+    const timeProgress = Math.min(50, totalTimeSpent * 10)
+    
+    // 3. Total progress = audio + time (capped at 100%)
+    const totalProgress = Math.round(Math.min(100, audioProgress + timeProgress))
+    
+    console.log('📊 Progress calculation (from state):', {
+      totalUniqueAudios,
+      effectiveUniqueAudios,
+      audioProgress: audioProgress.toFixed(2),
+      totalTimeSpent,
+      timeProgress: timeProgress.toFixed(2),
+      totalProgress,
+    })
+    
+    return totalProgress
   }
+
+  const handleAudioPlay = (audioKey: string) => {
+    // Track unique audios played (only count new ones) - check BEFORE adding
+    if (uniqueAudiosPlayedRef.current.has(audioKey)) {
+      // Already played this audio, don't update progress
+      console.log('🔇 Audio already played, skipping:', audioKey)
+      return
+    }
+    
+    console.log('🔊 New unique audio played:', audioKey, 'Total unique:', uniqueAudiosPlayedRef.current.size + 1)
+    uniqueAudiosPlayedRef.current.add(audioKey)
+    
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const safeTimeSpent = Math.min(1000, totalTimeSpent)
+    
+    const progress = calculateProgress()
+    // Set status to COMPLETED when progress reaches 100%, otherwise preserve existing status or set to IN_PROGRESS
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS')
+    
+    console.log('📊 Progress update:', {
+      progress,
+      status,
+      uniqueAudios: uniqueAudiosPlayedRef.current.size,
+      audioKey,
+    })
+    
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent)
+  }
+
+  const progress = getLessonProgress(LESSON_ID)
+  
+  // Calculate learned count from actual unique audios (includes letters + comparisons)
+  const estimatedBaseCount = Math.min(baseAudioPlaysRef.current, progressConfig.totalAudios)
+  const newUniqueAudios = uniqueAudiosPlayedRef.current.size
+  const learnedCount = Math.min(estimatedBaseCount + newUniqueAudios, progressConfig.totalAudios)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
-      <div className="container mx-auto px-4 py-6">
-        <div className="mb-6">
-          <Link href="/learn" className="text-kurdish-red font-bold flex items-center gap-2 mb-4">
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </Link>
-          <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center">Kurdish Alphabet</h1>
-          <p className="text-gray-700 mt-4 text-center max-w-2xl mx-auto">
-            Learn all 31 letters of the Kurdish alphabet with pronunciation and example words. Start here!
-          </p>
-        </div>
+      <PageContainer>
+        <BackLink />
+        <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center mb-6">Kurdish Alphabet</h1>
 
         <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className="card p-6 mb-6">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-            {letters.map((l) => (
-              <motion.div key={l.glyph} initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className="card p-5">
-                <div className="text-center mb-4">
-                  <div className="text-4xl font-bold text-kurdish-red">{l.glyph}</div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <AudioButton 
-                    kurdishText={l.glyph.toLowerCase()} 
-                    phoneticText={l.glyph.toUpperCase()} 
-                    label="Listen" 
-                    size="small"
-                    audioFile={`/audio/kurdish-tts-mp3/alphabet/${getLetterAudioFile(l.glyph)}.mp3`}
-                    onPlay={handleAudioPlay}
-                  />
-                  <div className="text-right">
-                    <div className="text-sm font-medium text-gray-800">{l.word}</div>
-                    <div className="text-xs text-gray-500">{l.meaning}</div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+            {letters.map((l) => {
+              const audioKey = `letter-${l.glyph}`
+              return (
+                <motion.div key={l.glyph} initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className="card p-6">
+                  <div className="text-center mb-5">
+                    <div className="text-4xl font-bold text-kurdish-red">{l.glyph}</div>
                   </div>
-                </div>
-              </motion.div>
-            ))}
+                  <div className="flex items-center justify-between gap-3">
+                    <AudioButton 
+                      kurdishText={l.glyph.toLowerCase()} 
+                      phoneticText={l.glyph.toUpperCase()} 
+                      label="Listen" 
+                      size="small"
+                      audioFile={`/audio/kurdish-tts-mp3/alphabet/${getLetterAudioFile(l.glyph)}.mp3`}
+                      onPlay={() => handleAudioPlay(audioKey)}
+                    />
+                    <div className="text-right flex-1 min-w-0">
+                      <div className="text-sm font-medium text-gray-800">{l.word}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{l.meaning}</div>
+                    </div>
+                  </div>
+                </motion.div>
+              )
+            })}
           </div>
         </motion.div>
 
@@ -166,7 +303,7 @@ export default function AlphabetPage() {
                     label="Listen" 
                     size="small"
                     audioFile="/audio/kurdish-tts-mp3/alphabet/i.mp3"
-                    onPlay={handleAudioPlay}
+                    onPlay={() => handleAudioPlay("comparison-i-1")}
                   />
                   <div className="text-sm font-medium text-gray-800 mt-2">isal</div>
                   <div className="text-xs text-gray-500">this year</div>
@@ -181,7 +318,7 @@ export default function AlphabetPage() {
                     label="Listen" 
                     size="small"
                     audioFile="/audio/kurdish-tts-mp3/alphabet/circumflex-i.mp3"
-                    onPlay={handleAudioPlay}
+                    onPlay={() => handleAudioPlay("comparison-i-2")}
                   />
                   <div className="text-sm font-medium text-gray-800 mt-2">îro</div>
                   <div className="text-xs text-gray-500">today</div>
@@ -204,7 +341,7 @@ export default function AlphabetPage() {
                     label="Listen" 
                     size="small"
                     audioFile="/audio/kurdish-tts-mp3/alphabet/u.mp3"
-                    onPlay={handleAudioPlay}
+                    onPlay={() => handleAudioPlay("comparison-u-1")}
                   />
                   <div className="text-sm font-medium text-gray-800 mt-2">usta</div>
                   <div className="text-xs text-gray-500">master</div>
@@ -219,7 +356,7 @@ export default function AlphabetPage() {
                     label="Listen" 
                     size="small"
                     audioFile="/audio/kurdish-tts-mp3/alphabet/circumflex-u.mp3"
-                    onPlay={handleAudioPlay}
+                    onPlay={() => handleAudioPlay("comparison-u-2")}
                   />
                   <div className="text-sm font-medium text-gray-800 mt-2">ûr</div>
                   <div className="text-xs text-gray-500">fire</div>
@@ -242,7 +379,7 @@ export default function AlphabetPage() {
                     label="Listen" 
                     size="small"
                     audioFile="/audio/kurdish-tts-mp3/alphabet/e.mp3"
-                    onPlay={handleAudioPlay}
+                    onPlay={() => handleAudioPlay("comparison-e-1")}
                   />
                   <div className="text-sm font-medium text-gray-800 mt-2">ev</div>
                   <div className="text-xs text-gray-500">this</div>
@@ -257,7 +394,7 @@ export default function AlphabetPage() {
                     label="Listen" 
                     size="small"
                     audioFile="/audio/kurdish-tts-mp3/alphabet/circumflex-e.mp3"
-                    onPlay={handleAudioPlay}
+                    onPlay={() => handleAudioPlay("comparison-e-2")}
                   />
                   <div className="text-sm font-medium text-gray-800 mt-2">êvar</div>
                   <div className="text-xs text-gray-500">evening</div>
@@ -300,7 +437,7 @@ export default function AlphabetPage() {
             </div>
           </div>
         </motion.div>
-      </div>
+      </PageContainer>
     </div>
   )
 }

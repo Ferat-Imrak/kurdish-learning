@@ -252,8 +252,8 @@ router.post('/check', authenticateToken, async (req: AuthRequest, res: Response)
           age: 5,
           parentId: userId,
           language: 'KURMANJI'
-        })
-      }
+        }
+      })
     }
 
     const newlyEarned: string[] = []

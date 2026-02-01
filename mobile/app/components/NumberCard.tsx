@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { Asset } from 'expo-asset';
@@ -23,8 +23,6 @@ export default function NumberCard({
 }: NumberCardProps) {
   const [playing, setPlaying] = useState(false);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const scaleAnim = React.useRef(new Animated.Value(1)).current;
-  const opacityAnim = React.useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Audio.setAudioModeAsync({
@@ -86,54 +84,13 @@ export default function NumberCard({
     }
   };
 
-  const handlePressIn = () => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 0.96,
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacityAnim, {
-        toValue: 0.7,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacityAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  const handlePress = () => {
+  const handleButtonPress = () => {
     playSound();
   };
 
   return (
-    <Pressable
-      onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={styles.pressable}
-    >
-      <Animated.View
-        style={[
-          styles.card,
-          {
-            transform: [{ scale: scaleAnim }],
-            opacity: opacityAnim,
-          },
-        ]}
-      >
+    <View style={styles.pressable}>
+      <View style={styles.card}>
         <View style={styles.content}>
           {/* Number on left */}
           <View style={styles.numberContainer}>
@@ -142,25 +99,39 @@ export default function NumberCard({
 
           {/* Kurdish and English on right */}
           <View style={styles.textContainer}>
-            <Text style={styles.kurdish} numberOfLines={2}>
+            <Text 
+              style={styles.kurdish} 
+              numberOfLines={2} 
+              ellipsizeMode="tail"
+              adjustsFontSizeToFit={false}
+            >
               {kurdish}
             </Text>
-            <Text style={styles.english} numberOfLines={2}>
+            <Text 
+              style={styles.english} 
+              numberOfLines={2} 
+              ellipsizeMode="tail"
+              adjustsFontSizeToFit={false}
+            >
               {english}
             </Text>
           </View>
         </View>
 
-        {/* Small speaker icon in bottom-right */}
-        <View style={styles.speakerContainer}>
+        {/* Small speaker icon in bottom-right - only this is pressable */}
+        <Pressable
+          onPress={handleButtonPress}
+          style={styles.speakerContainer}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
           <Ionicons
             name={playing ? 'volume-high' : 'volume-low-outline'}
             size={22}
             color="#4b5563"
           />
-        </View>
-      </Animated.View>
-    </Pressable>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -168,6 +139,7 @@ const styles = StyleSheet.create({
   pressable: {
     flex: 1,
     margin: 6,
+    maxWidth: '48%', // Prevent stretching when alone in last row
   },
   card: {
     backgroundColor: '#ffffff',
@@ -186,35 +158,43 @@ const styles = StyleSheet.create({
   content: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 5,
     flex: 1,
+    minWidth: 0, // Allow content to shrink properly
   },
   numberContainer: {
     justifyContent: 'center',
     alignItems: 'flex-start',
+    flexShrink: 0, // Don't shrink the number
+    width: 50, // Fixed width for number to give more space for text
   },
   number: {
-    fontSize: 48,
+    fontSize: 26,
     fontWeight: '700',
     color: '#3A86FF',
-    lineHeight: 56,
+    lineHeight: 32,
   },
   textContainer: {
     flex: 1,
     justifyContent: 'center',
-    paddingRight: 20,
+    paddingRight: 28, // Space for speaker icon
+    minWidth: 0, // Allow text to shrink properly
   },
   kurdish: {
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: '700',
     color: '#111827',
     marginBottom: 4,
-    lineHeight: 22,
+    lineHeight: 20,
+    flexShrink: 1, // Allow text to shrink
+    flexWrap: 'wrap', // Allow wrapping for multi-word phrases
   },
   english: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#6b7280',
-    lineHeight: 18,
+    lineHeight: 17,
+    flexShrink: 1, // Allow text to shrink
+    flexWrap: 'wrap', // Allow wrapping for multi-word phrases
   },
   speakerContainer: {
     position: 'absolute',

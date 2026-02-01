@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { Asset } from 'expo-asset';
@@ -23,8 +23,6 @@ export default function LetterCard({
 }: LetterCardProps) {
   const [playing, setPlaying] = useState(false);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const scaleAnim = React.useRef(new Animated.Value(1)).current;
-  const opacityAnim = React.useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Audio.setAudioModeAsync({
@@ -86,54 +84,13 @@ export default function LetterCard({
     }
   };
 
-  const handlePressIn = () => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 0.96,
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacityAnim, {
-        toValue: 0.7,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacityAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  const handlePress = () => {
+  const handleButtonPress = () => {
     playSound();
   };
 
   return (
-    <Pressable
-      onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={styles.pressable}
-    >
-      <Animated.View
-        style={[
-          styles.card,
-          {
-            transform: [{ scale: scaleAnim }],
-            opacity: opacityAnim,
-          },
-        ]}
-      >
+    <View style={styles.pressable}>
+      <View style={styles.card}>
         <View style={styles.content}>
           {/* Letter on left */}
           <View style={styles.letterContainer}>
@@ -151,16 +108,20 @@ export default function LetterCard({
           </View>
         </View>
 
-        {/* Small speaker icon in bottom-right */}
-        <View style={styles.speakerContainer}>
+        {/* Small speaker icon in bottom-right - only this is pressable */}
+        <Pressable
+          onPress={handleButtonPress}
+          style={styles.speakerContainer}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
           <Ionicons
             name={playing ? 'volume-high' : 'volume-low-outline'}
             size={22}
             color="#4b5563"
           />
-        </View>
-      </Animated.View>
-    </Pressable>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -168,6 +129,7 @@ const styles = StyleSheet.create({
   pressable: {
     flex: 1,
     margin: 6,
+    maxWidth: '48%', // Prevent stretching when alone in last row
   },
   card: {
     backgroundColor: '#ffffff',
@@ -194,10 +156,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   letter: {
-    fontSize: 56,
+    fontSize: 40,
     fontWeight: '700',
     color: '#3A86FF',
-    lineHeight: 64,
+    lineHeight: 46,
   },
   textContainer: {
     flex: 1,

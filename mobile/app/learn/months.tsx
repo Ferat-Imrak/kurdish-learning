@@ -10,7 +10,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+
+const SKY = '#EAF3FF';
+const SKY_DEEPER = '#d6e8ff';
+const TEXT_PRIMARY = '#0F172A';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
 import MonthCard from '../components/MonthCard';
@@ -308,53 +313,42 @@ export default function MonthsPage() {
     );
   };
 
-  return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </Pressable>
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Months of the Year</Text>
-        </View>
-        <View style={styles.headerSpacer} />
-      </View>
+  const learnedMonths = Math.floor((progress.progress / 100) * months.length);
 
-      {/* Progress Info */}
-      <View style={styles.progressInfoContainer}>
-        <Text style={styles.progressInfoText}>
-          <Text style={styles.progressInfoLabel}>Progress: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            progress.progress === 100 && styles.progressInfoComplete
-          ]}>
-            {Math.round(progress.progress)}%
-          </Text>
-          <Text style={styles.progressInfoSeparator}> • </Text>
-          <Text style={styles.progressInfoLabel}>Learn: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            Math.floor((progress.progress / 100) * months.length) === months.length && styles.progressInfoComplete
-          ]}>
-            {Math.floor((progress.progress / 100) * months.length)}/{months.length}
-          </Text>
-          <Text style={styles.progressInfoSeparator}> • </Text>
-          <Text style={styles.progressInfoLabel}>Practice: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            progress.status === 'COMPLETED' && styles.progressInfoComplete
-          ]}>
-            {progress.status === 'COMPLETED' ? 'Done' : 'Pending'}
-          </Text>
-        </Text>
-      </View>
+  return (
+    <View style={styles.pageWrap}>
+      <LinearGradient colors={[SKY, SKY_DEEPER, SKY]} style={StyleSheet.absoluteFill} />
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} style={styles.backHit} hitSlop={8}>
+            <Ionicons name="chevron-back" size={24} color={TEXT_PRIMARY} />
+          </Pressable>
+          <Text style={styles.headerTitle}>Months of the Year</Text>
+          <View style={styles.headerRight} />
+        </View>
+
+        <View style={styles.progressBarCard}>
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Progress</Text>
+            <Text style={[styles.progressBarValue, progress.progress === 100 && styles.progressBarComplete]}>
+              {Math.round(progress.progress)}%
+            </Text>
+          </View>
+          <View style={styles.progressBarDivider} />
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Learn</Text>
+            <Text style={[styles.progressBarValue, learnedMonths === months.length && styles.progressBarComplete]}>
+              {learnedMonths}/{months.length}
+            </Text>
+          </View>
+          <View style={styles.progressBarDivider} />
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Practice</Text>
+            <Text style={[styles.progressBarValue, progress.status === 'COMPLETED' && styles.progressBarComplete]}>
+              {progress.status === 'COMPLETED' ? 'Done' : 'Pending'}
+            </Text>
+          </View>
+        </View>
 
       {/* Segmented Control - Mode Toggle */}
       <View style={styles.segmentedControl}>
@@ -862,24 +856,21 @@ export default function MonthsPage() {
           </View>
         </ScrollView>
       )}
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f0f4f8',
-  },
+  pageWrap: { flex: 1 },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    minHeight: 44,
   },
   backButton: {
     width: 40,
@@ -898,46 +889,61 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 22,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.5,
+  },
+  headerRight: { width: 44 },
+  backHit: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  progressBarCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    marginHorizontal: 20,
+    marginTop: 6,
+    marginBottom: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  progressBarSection: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressBarLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#6b7280',
+    marginBottom: 1,
+  },
+  progressBarValue: {
+    fontSize: 15,
     fontWeight: '700',
     color: '#111827',
   },
-  headerSpacer: {
-    width: 40,
-  },
-  progressInfoContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
-    borderRadius: 12,
-    marginHorizontal: 20,
-    marginBottom: 12,
-  },
-  progressInfoText: {
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 18,
-    flexWrap: 'nowrap',
-  },
-  progressInfoLabel: {
-    fontWeight: '600',
-    color: '#374151',
-  },
-  progressInfoValue: {
-    fontWeight: '700',
-    color: '#6b7280',
-  },
-  progressInfoComplete: {
-    color: '#10b981',
-  },
-  progressInfoSeparator: {
-    color: '#9ca3af',
+  progressBarComplete: { color: '#10b981' },
+  progressBarDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#e5e7eb',
   },
   segmentedControl: {
     flexDirection: 'row',
-    backgroundColor: '#f3f4f6',
     borderRadius: 12,
-    padding: 4,
+    gap: 8,
     marginHorizontal: 20,
     marginBottom: 12,
   },

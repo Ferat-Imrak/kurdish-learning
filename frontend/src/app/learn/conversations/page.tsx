@@ -1,10 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, MessageCircle, Users, ShoppingCart, Utensils, MapPin, Phone, Heart, Coffee, Car } from 'lucide-react'
-import Link from 'next/link'
+import { MessageCircle, Users, ShoppingCart, Utensils, MapPin, Phone, Heart, Coffee, Car } from 'lucide-react'
+import PageContainer from '../../../components/PageContainer'
+import BackLink from '../../../components/BackLink'
 import AudioButton from '../../../components/lessons/AudioButton'
+import { useProgress } from '../../../contexts/ProgressContext'
+import { restoreRefsFromProgress } from '../../../lib/progressHelper'
+
+const LESSON_ID = '10' // Daily Conversations lesson ID
 
 interface Conversation {
   id: string
@@ -31,63 +36,63 @@ const categories: ConversationCategory[] = [
     id: 'greetings',
     name: 'Greetings & Small Talk',
     description: 'Basic greetings and polite conversation',
-    icon: <MessageCircle className="w-6 h-6" />,
+    icon: <MessageCircle className="w-4 h-4" />,
     color: 'bg-green-100 text-green-800'
   },
   {
     id: 'shopping',
     name: 'Shopping & Market',
     description: 'Buying things and asking prices',
-    icon: <ShoppingCart className="w-6 h-6" />,
+    icon: <ShoppingCart className="w-4 h-4" />,
     color: 'bg-blue-100 text-blue-800'
   },
   {
     id: 'food',
     name: 'Restaurant & Food',
     description: 'Ordering food and dining out',
-    icon: <Utensils className="w-6 h-6" />,
+    icon: <Utensils className="w-4 h-4" />,
     color: 'bg-orange-100 text-orange-800'
   },
   {
     id: 'directions',
     name: 'Directions & Location',
     description: 'Asking for and giving directions',
-    icon: <MapPin className="w-6 h-6" />,
+    icon: <MapPin className="w-4 h-4" />,
     color: 'bg-purple-100 text-purple-800'
   },
   {
     id: 'emergency',
     name: 'Emergency & Help',
     description: 'Important phrases for emergencies',
-    icon: <Phone className="w-6 h-6" />,
+    icon: <Phone className="w-4 h-4" />,
     color: 'bg-red-100 text-red-800'
   },
   {
     id: 'social',
     name: 'Social & Friends',
     description: 'Meeting people and making friends',
-    icon: <Heart className="w-6 h-6" />,
+    icon: <Heart className="w-4 h-4" />,
     color: 'bg-pink-100 text-pink-800'
   },
   {
     id: 'coffee',
     name: 'Coffee & Tea Time',
     description: 'Traditional Kurdish hospitality',
-    icon: <Coffee className="w-6 h-6" />,
+    icon: <Coffee className="w-4 h-4" />,
     color: 'bg-amber-100 text-amber-800'
   },
   {
     id: 'transport',
     name: 'Transportation',
     description: 'Getting around and travel',
-    icon: <Car className="w-6 h-6" />,
+    icon: <Car className="w-4 h-4" />,
     color: 'bg-indigo-100 text-indigo-800'
   },
   {
     id: 'phrases',
     name: 'Daily Phrases',
     description: 'Essential Kurdish phrases for everyday use',
-    icon: <MessageCircle className="w-6 h-6" />,
+    icon: <MessageCircle className="w-4 h-4" />,
     color: 'bg-teal-100 text-teal-800'
   }
 ]
@@ -923,6 +928,25 @@ const conversations: Conversation[] = [
 ]
 
 export default function DailyConversationsPage() {
+  const { updateLessonProgress, getLessonProgress } = useProgress()
+  
+  // Progress tracking configuration
+  const progressConfig = {
+    totalAudios: 81, // 9 greetings + 9 shopping + 9 food + 9 directions + 9 emergency + 9 social + 9 coffee + 9 transport + 9 phrases
+    hasPractice: false,
+    audioWeight: 50,
+    timeWeight: 50,
+    audioMultiplier: 100 / 81, // ~1.23% per audio
+  }
+  
+  // Initialize refs - will be restored in useEffect
+  const storedProgress = getLessonProgress(LESSON_ID)
+  const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig)
+  const startTimeRef = useRef<number>(estimatedStartTime)
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set())
+  const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays)
+  const refsInitializedRef = useRef(false)
+
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
 
   const filteredConversations = selectedCategory === 'all' 
@@ -931,14 +955,167 @@ export default function DailyConversationsPage() {
 
   const selectedCategoryInfo = categories.find(cat => cat.id === selectedCategory)
 
+  // Calculate progress based on unique audios played and time spent
+  const calculateProgress = (): number => {
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const storedProgress = currentProgress?.progress || 0
+    
+    // Calculate total unique audios played (base + session)
+    const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size
+    const effectiveUniqueAudios = Math.min(totalUniqueAudios, progressConfig.totalAudios)
+    
+    // Audio progress: 50% weight
+    const audioProgress = Math.min(progressConfig.audioWeight, (effectiveUniqueAudios / progressConfig.totalAudios) * progressConfig.audioWeight)
+    
+    // Time progress: 50% weight (3 minutes = 50%)
+    const baseTimeSpent = currentProgress?.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const timeProgress = Math.min(progressConfig.timeWeight, (totalTimeSpent / 3) * progressConfig.timeWeight)
+    
+    // Combined progress
+    let calculatedProgress = audioProgress + timeProgress
+    
+    // Special case: if all audios are played, force 100% completion (prioritizing audio completion)
+    if (effectiveUniqueAudios >= progressConfig.totalAudios) {
+      calculatedProgress = 100
+    }
+    
+    // Prevent progress from decreasing
+    return Math.max(storedProgress, Math.round(calculatedProgress))
+  }
+
+  // Handle audio play - track unique audios
+  const handleAudioPlay = (audioKey: string) => {
+    // Track unique audios played (only count new ones) - check BEFORE adding
+    if (uniqueAudiosPlayedRef.current.has(audioKey)) {
+      // Already played this audio, don't update progress
+      console.log('🔇 Audio already played, skipping:', audioKey)
+      return
+    }
+    
+    console.log('🔊 New unique audio played:', audioKey, 'Total unique:', uniqueAudiosPlayedRef.current.size + 1)
+    uniqueAudiosPlayedRef.current.add(audioKey)
+    
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress?.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const safeTimeSpent = Math.min(1000, totalTimeSpent)
+    
+    const progress = calculateProgress()
+    
+    // Set status to COMPLETED when progress reaches 100%, otherwise preserve existing status or set to IN_PROGRESS
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress?.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS')
+    
+    console.log('📊 Progress update:', {
+      progress,
+      status,
+      uniqueAudios: uniqueAudiosPlayedRef.current.size,
+      audioKey,
+    })
+    
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent)
+  }
+
+  // Initial setup: restore refs from stored progress and mark lesson as in progress
+  useEffect(() => {
+    if (refsInitializedRef.current) {
+      return
+    }
+
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Mark lesson as IN_PROGRESS if not already completed
+    if (currentProgress?.status === 'NOT_STARTED') {
+      updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS')
+    }
+    
+    // Restore refs from stored progress (only once)
+    if (currentProgress) {
+      const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig)
+      startTimeRef.current = estimatedStartTime
+      
+      // Only restore baseAudioPlaysRef if progress is significant (>20%)
+      if (currentProgress.progress > 20) {
+        baseAudioPlaysRef.current = Math.min(estimatedAudioPlays, progressConfig.totalAudios)
+      } else {
+        baseAudioPlaysRef.current = 0
+        console.log('🔄 Progress is low (<20%), resetting baseAudioPlaysRef to 0 for accurate tracking')
+      }
+      
+      // Safety check: if baseAudioPlaysRef is already at or near totalAudios, reset it
+      if (baseAudioPlaysRef.current >= progressConfig.totalAudios - 2) {
+        console.warn('⚠️ baseAudioPlaysRef is too high, resetting to 0 to prevent progress jump')
+        baseAudioPlaysRef.current = 0
+      }
+      
+      // Check if progress is 100% but status is not COMPLETED
+      if (currentProgress.progress >= 100 && currentProgress.status !== 'COMPLETED') {
+        console.log('✅ Progress is 100% but status is not COMPLETED, updating status...')
+        updateLessonProgress(LESSON_ID, currentProgress.progress, 'COMPLETED', undefined, currentProgress.timeSpent)
+      }
+    }
+    
+    refsInitializedRef.current = true
+  }, [getLessonProgress, updateLessonProgress])
+
+  // Periodic progress update based on time spent
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const currentProgress = getLessonProgress(LESSON_ID)
+      const progress = calculateProgress()
+      
+      // Only update if progress changed
+      if (progress !== currentProgress.progress) {
+        const baseTimeSpent = currentProgress?.timeSpent || 0
+        const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+        const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+        const safeTimeSpent = Math.min(1000, totalTimeSpent)
+        
+        const status = progress >= 100 ? 'COMPLETED' : (currentProgress?.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS')
+        updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent)
+      }
+    }, 30000) // Update every 30 seconds
+    
+    return () => clearInterval(interval)
+  }, [getLessonProgress, updateLessonProgress])
+
+  // Recovery check: if all audios are played but progress is not 100%
+  useEffect(() => {
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size
+    
+    if (totalUniqueAudios >= progressConfig.totalAudios && currentProgress.progress < 100) {
+      console.log('🔍 All audios played but progress is not 100%, forcing to 100%...')
+      updateLessonProgress(LESSON_ID, 100, 'COMPLETED', undefined, currentProgress.timeSpent)
+    }
+  }, [getLessonProgress, updateLessonProgress])
+
+  // Check on page visibility change (when user comes back to tab)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const currentProgress = getLessonProgress(LESSON_ID)
+        const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size
+        
+        if (totalUniqueAudios >= progressConfig.totalAudios && currentProgress.progress < 100) {
+          console.log('👁️ Page visible - fixing progress to 100% (all audios played)')
+          updateLessonProgress(LESSON_ID, 100, 'COMPLETED', undefined, currentProgress.timeSpent)
+        }
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [getLessonProgress, updateLessonProgress])
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
-      <div className="container mx-auto px-4 py-4">
-        {/* Back Button */}
-        <Link href={`/learn`} className="text-kurdish-red font-bold flex items-center gap-2 mb-6">
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </Link>
+      <PageContainer>
+        <BackLink />
 
         {/* Header */}
         <motion.div
@@ -953,9 +1130,6 @@ export default function DailyConversationsPage() {
               Daily Conversations
             </h1>
           </div>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            Learn practical Kurdish phrases for everyday situations. Perfect for real conversations!
-          </p>
         </motion.div>
 
         {/* Category Filter */}
@@ -968,7 +1142,7 @@ export default function DailyConversationsPage() {
           <div className="flex flex-wrap gap-2 justify-center">
             <button
               onClick={() => setSelectedCategory('all')}
-              className={`px-4 py-2 rounded-full font-medium transition-all ${
+              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
                 selectedCategory === 'all'
                   ? 'bg-kurdish-red text-white shadow-lg'
                   : 'bg-white text-gray-600 hover:bg-gray-50'
@@ -980,7 +1154,7 @@ export default function DailyConversationsPage() {
               <button
                 key={category.id}
                 onClick={() => setSelectedCategory(category.id)}
-                className={`px-4 py-2 rounded-full font-medium transition-all flex items-center gap-2 ${
+                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-1.5 ${
                   selectedCategory === category.id
                     ? 'bg-kurdish-red text-white shadow-lg'
                     : 'bg-white text-gray-600 hover:bg-gray-50'
@@ -1018,56 +1192,46 @@ export default function DailyConversationsPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: index * 0.1 }}
-              className="bg-white rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border border-gray-100"
+              className="bg-white rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border border-gray-100 flex flex-col"
             >
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  {conversation.icon}
-                  <h3 className="font-bold text-lg text-gray-800">
-                    {conversation.title}
-                  </h3>
+              <div className="flex items-center gap-3 mb-4">
+                {conversation.icon}
+                <h3 className="font-bold text-lg text-gray-800 whitespace-nowrap truncate">
+                  {conversation.title}
+                </h3>
+              </div>
+
+              <div className="space-y-3 flex-1">
+                <div>
+                  <p className="text-gray-600 text-sm mb-1">Kurdish:</p>
+                  <p className="font-bold text-kurdish-red text-lg">{conversation.kurdish}</p>
                 </div>
+                
+                <div>
+                  <p className="text-gray-600 text-sm mb-1">English:</p>
+                  <p className="font-medium text-gray-800">{conversation.english}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between">
+                <AudioButton
+                  kurdishText={conversation.kurdish}
+                  phoneticText={conversation.pronunciation}
+                  label="Listen"
+                  size="small"
+                  onPlay={(audioKey) => handleAudioPlay(audioKey || `conversation-${conversation.id}-${conversation.kurdish}`)}
+                />
                 <div className={`px-2 py-1 rounded-full text-xs font-medium ${
                   categories.find(cat => cat.id === conversation.category)?.color
                 }`}>
                   {categories.find(cat => cat.id === conversation.category)?.name}
                 </div>
               </div>
-
-              <div className="space-y-3">
-                <div>
-                  <p className="text-gray-600 text-sm mb-1">English:</p>
-                  <p className="font-medium text-gray-800">{conversation.english}</p>
-                </div>
-                
-                <div>
-                  <p className="text-gray-600 text-sm mb-1">Kurdish:</p>
-                  <p className="font-bold text-kurdish-red text-lg">{conversation.kurdish}</p>
-                </div>
-
-                <div>
-                  <p className="text-gray-600 text-sm mb-1">Pronunciation:</p>
-                  <p className="text-gray-500 italic">{conversation.pronunciation}</p>
-                </div>
-
-                <div className="pt-2">
-                  <p className="text-xs text-gray-400">{conversation.context}</p>
-                </div>
-              </div>
-
-              <div className="mt-4 flex justify-center">
-                <AudioButton
-                  kurdishText={conversation.kurdish}
-                  phoneticText={conversation.pronunciation}
-                  label="Listen"
-                  size="medium"
-                />
-              </div>
             </motion.div>
           ))}
         </motion.div>
 
-      </div>
+      </PageContainer>
 
     </div>
   )

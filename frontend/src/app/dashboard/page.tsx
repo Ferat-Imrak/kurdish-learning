@@ -5,6 +5,124 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { useAuth } from '../providers'
 import { useProgress } from '../../contexts/ProgressContext'
+
+// Local achievement definitions (matches achievements page)
+const ACHIEVEMENT_DEFINITIONS: Record<string, {
+  title: string
+  description: string
+  icon: string
+  points: number
+  category: string
+  rarity?: 'bronze' | 'silver' | 'gold' | 'platinum'
+  target?: number
+  getProgress: (data: any) => number
+}> = {
+  FIRST_LESSON: {
+    title: 'First Steps',
+    description: 'Complete your first lesson',
+    icon: '⭐',
+    points: 10,
+    category: 'Learning',
+    rarity: 'bronze',
+    target: 1,
+    getProgress: (data: any) => Math.min(100, (data?.lessonsCompletedCount || 0) / 1 * 100)
+  },
+  FIVE_LESSONS: {
+    title: 'Learning Path',
+    description: 'Complete 5 lessons',
+    icon: '📚',
+    points: 25,
+    category: 'Learning',
+    rarity: 'silver',
+    target: 5,
+    getProgress: (data: any) => Math.min(100, (data?.lessonsCompletedCount || 0) / 5 * 100)
+  },
+  TEN_LESSONS: {
+    title: 'Dedicated Learner',
+    description: 'Complete 10 lessons',
+    icon: '🎓',
+    points: 50,
+    category: 'Learning',
+    rarity: 'gold',
+    target: 10,
+    getProgress: (data: any) => Math.min(100, (data?.lessonsCompletedCount || 0) / 10 * 100)
+  },
+  FLASHCARDS_MASTER: {
+    title: 'Flashcards Master',
+    description: 'Complete all flashcards categories',
+    icon: '🧠',
+    points: 50,
+    category: 'Games',
+    rarity: 'gold',
+    target: 14,
+    getProgress: (data: any) => {
+      if (data?.flashcardsCompleted) return 100
+      const totalCategories = 14
+      const completedCount = data?.flashcardsCompletedCount || 0
+      return Math.round((completedCount / totalCategories) * 100)
+    }
+  },
+  MATCHING_MASTER: {
+    title: 'Matching Master',
+    description: 'Complete all matching game categories',
+    icon: '🎯',
+    points: 50,
+    category: 'Games',
+    rarity: 'gold',
+    target: 1,
+    getProgress: (data: any) => data?.matchingCompleted ? 100 : 0
+  },
+  WORD_BUILDER_MASTER: {
+    title: 'Word Builder Master',
+    description: 'Complete all word builder categories',
+    icon: '🔤',
+    points: 50,
+    category: 'Games',
+    rarity: 'gold',
+    target: 1,
+    getProgress: (data: any) => data?.wordBuilderCompleted ? 100 : 0
+  },
+  TRANSLATION_MASTER: {
+    title: 'Translation Master',
+    description: 'Complete all translation practice categories',
+    icon: '🌐',
+    points: 50,
+    category: 'Games',
+    rarity: 'gold',
+    target: 1,
+    getProgress: (data: any) => data?.translationCompleted ? 100 : 0
+  },
+  MEMORY_CARDS_MASTER: {
+    title: 'Memory Master',
+    description: 'Complete all memory card categories',
+    icon: '🧩',
+    points: 50,
+    category: 'Games',
+    rarity: 'gold',
+    target: 1,
+    getProgress: (data: any) => data?.memoryCardsCompleted ? 100 : 0
+  },
+  ALL_GAMES_MASTER: {
+    title: 'Game Master',
+    description: 'Complete all game categories',
+    icon: '🏆',
+    points: 100,
+    category: 'Games',
+    rarity: 'platinum',
+    target: 1,
+    getProgress: (data: any) => data?.allGamesCompleted ? 100 : 0
+  },
+  STORY_READER: {
+    title: 'Story Reader',
+    description: 'Read your first story',
+    icon: '📖',
+    points: 25,
+    category: 'Stories',
+    rarity: 'bronze',
+    target: 1,
+    getProgress: (data: any) => Math.min(100, (data?.storiesReadCount || 0) / 1 * 100)
+  }
+}
 import { 
   BookOpen, 
   Gamepad2, 
@@ -17,12 +135,14 @@ import {
   Heart,
   ArrowRight,
   CheckCircle,
-  BookMarked
+  BookMarked,
+  Trash2
 } from 'lucide-react'
 
 export default function DashboardPage() {
   const { user } = useAuth()
-  const { getRecentLessons, getLessonProgress } = useProgress()
+  const { getRecentLessons, getLessonProgress, clearProgress, lessonProgress } = useProgress()
+  const [isClearing, setIsClearing] = useState(false)
 
   // All available lessons (matching learn page)
   const allLessons = [
@@ -74,67 +194,224 @@ export default function DashboardPage() {
   const [achievements, setAchievements] = useState<any[]>([])
   const [achievementsLoading, setAchievementsLoading] = useState(true)
 
-  // Load achievements from API
+  // Helper function to get progress data (matches achievements page)
+  const getProgressData = () => {
+    if (typeof window === 'undefined') return {}
+
+    // Check lesson progress from ProgressContext (more reliable)
+    let lessonsCompletedCount = 0
+    try {
+      if (lessonProgress && Object.keys(lessonProgress).length > 0) {
+        const completedLessons = Object.values(lessonProgress).filter(
+          (lesson: any) => lesson.status === 'COMPLETED'
+        )
+        lessonsCompletedCount = completedLessons.length
+      } else {
+        // Fallback to localStorage
+        const lessonProgressKey = Object.keys(localStorage).find(key => key.startsWith('lessonProgress_'))
+        if (lessonProgressKey) {
+          const lessonProgressData = JSON.parse(localStorage.getItem(lessonProgressKey) || '{}')
+          lessonsCompletedCount = Object.values(lessonProgressData).filter(
+            (lesson: any) => lesson.status === 'COMPLETED'
+          ).length
+        }
+      }
+    } catch (error) {
+      console.error('Failed to parse lesson progress:', error)
+    }
+
+    // Check flashcards
+    const flashcardsCategories = [
+      "Colors", "Animals", "Food & Meals", "Family Members", "Nature",
+      "Time & Schedule", "Weather & Seasons", "House & Objects", "Numbers",
+      "Days & Months", "Basic Question Words", "Pronouns", "Body Parts", "Master Challenge"
+    ]
+    let flashcardsCompletedCount = 0
+    flashcardsCategories.forEach(cat => {
+      const stored = localStorage.getItem(`flashcards-progress-${cat}`)
+      if (stored) {
+        const progress = JSON.parse(stored)
+        if (progress.correct === progress.total && progress.total > 0) {
+          flashcardsCompletedCount++
+        }
+      }
+    })
+    const flashcardsCompleted = flashcardsCompletedCount === flashcardsCategories.length
+
+    // Check matching
+    const matchingCategories = ["colors", "animals", "food", "family", "nature", "time", "weather", "house", "numbers", "daysMonths", "questions", "pronouns", "bodyParts", "master"]
+    const matchingCompleted = matchingCategories.every(cat => {
+      const stored = localStorage.getItem(`matching-progress-${cat}`)
+      if (!stored) return false
+      const rounds = JSON.parse(stored)
+      return rounds >= (cat === "master" ? 20 : 10)
+    })
+
+    // Check word builder
+    const wordBuilderCategories = ["colors", "animals", "food", "family", "nature", "time", "weather", "house", "numbers", "daysMonths", "questions", "pronouns", "bodyParts", "master"]
+    const wordBuilderCompleted = wordBuilderCategories.every(cat => {
+      const stored = localStorage.getItem(`word-builder-progress-${cat}`)
+      if (!stored) return false
+      const progress = JSON.parse(stored)
+      return progress.completed === true
+    })
+
+    // Check translation
+    const translationCategories = ["colors", "animals", "food", "family", "nature", "time", "weather", "house", "numbers", "daysMonths", "questions", "pronouns", "bodyParts", "master"]
+    const translationCompleted = translationCategories.every(cat => {
+      const stored = localStorage.getItem(`picture-quiz-progress-${cat}`)
+      if (!stored) return false
+      const progress = JSON.parse(stored)
+      return progress.completed === true
+    })
+
+    // Check memory cards
+    const memoryCardsCategories = ["colors", "animals", "food", "nature", "time", "weather", "house", "numbers", "daysMonths", "bodyParts", "master"]
+    const memoryCardsCompleted = memoryCardsCategories.every(cat => {
+      const stored = localStorage.getItem(`memory-cards-progress-${cat}`)
+      if (!stored) return false
+      const progress = JSON.parse(stored)
+      return progress.easy === true && progress.medium === true && progress.hard === true
+    })
+
+    // Check stories
+    const storiesRead = localStorage.getItem('stories-read')
+    const storiesReadCount = storiesRead ? JSON.parse(storiesRead).length : 0
+
+    // Check all games completed
+    const allGamesCompleted = flashcardsCompleted && matchingCompleted && wordBuilderCompleted && translationCompleted && memoryCardsCompleted
+
+    return {
+      lessonsCompletedCount,
+      flashcardsCompleted,
+      flashcardsCompletedCount,
+      matchingCompleted,
+      wordBuilderCompleted,
+      translationCompleted,
+      memoryCardsCompleted,
+      storiesReadCount,
+      allGamesCompleted
+    }
+  }
+
+  // Load achievements (calculate locally first, then try backend)
   useEffect(() => {
     const loadAchievements = async () => {
       try {
         // Get progress data
-        const lessonProgressKey = Object.keys(localStorage).find(key => key.startsWith('lessonProgress_'))
-        let lessonsCompletedCount = 0
-        if (lessonProgressKey) {
-          try {
-            const lessonProgress = JSON.parse(localStorage.getItem(lessonProgressKey) || '{}')
-            lessonsCompletedCount = Object.values(lessonProgress).filter(
-              (lesson: any) => lesson.status === 'COMPLETED'
-            ).length
-          } catch {}
-        }
+        const progressData = getProgressData()
 
-        // Check game completions
-        const flashcardsCompleted = [
-          "Colors", "Animals", "Food & Meals", "Family Members", "Nature",
-          "Time & Schedule", "Weather & Seasons", "House & Objects", "Numbers",
-          "Days & Months", "Basic Question Words", "Pronouns", "Body Parts", "Master Challenge"
-        ].every(cat => {
-          const stored = localStorage.getItem(`flashcards-progress-${cat}`)
-          if (!stored) return false
-          const progress = JSON.parse(stored)
-          return progress.correct === progress.total && progress.total > 0
+        // Always calculate achievements locally first (works with or without backend)
+        const allAchievements = Object.entries(ACHIEVEMENT_DEFINITIONS).map(([type, def]) => {
+          const progress = def.getProgress ? def.getProgress(progressData) : 0
+          const earned = progress >= 100
+          return {
+            id: type,
+            type,
+            title: def.title,
+            description: def.description,
+            icon: def.icon,
+            points: def.points,
+            category: def.category,
+            rarity: def.rarity,
+            target: def.target,
+            earned,
+            progress: Math.round(progress),
+            earnedAt: earned ? new Date().toISOString() : null
+          }
         })
 
-        const storiesRead = localStorage.getItem('stories-read')
-        const storiesReadCount = storiesRead ? JSON.parse(storiesRead).length : 0
+        // Always set local achievements first (immediate display)
+        setAchievements(allAchievements)
+        setAchievementsLoading(false)
 
-        const progressData = {
-          lessonsCompletedCount,
-          flashcardsCompleted,
-          storiesReadCount
-        }
-
-        // Fetch achievements
-        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
-        const token = localStorage.getItem('auth_token')
-        
-        if (token) {
-          const response = await fetch(`${API_BASE_URL}/achievements?progressData=${encodeURIComponent(JSON.stringify(progressData))}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
+        // If user is authenticated, try to sync with backend in the background (but don't fail if it doesn't exist)
+        if (user) {
+          // Use a timeout to prevent hanging if backend is down
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 3000) // 3 second timeout
+          
+          try {
+            const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+            const token = localStorage.getItem('auth_token')
+            const progressDataStr = encodeURIComponent(JSON.stringify(progressData))
+            
+            const response = await fetch(`${API_BASE_URL}/achievements?progressData=${progressDataStr}`, {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              },
+              signal: controller.signal
+            })
+            
+            clearTimeout(timeoutId)
+            
+            if (response.ok) {
+              const data = await response.json()
+              // Merge backend data with local calculations (backend might have earnedAt dates)
+              const backendAchievements = (data.achievements || []).reduce((acc: any, ach: any) => {
+                acc[ach.type] = ach
+                return acc
+              }, {})
+              
+              // Use local calculations but preserve backend earnedAt dates
+              const mergedAchievements = allAchievements.map(ach => {
+                const backendAch = backendAchievements[ach.type]
+                if (backendAch && backendAch.earnedAt) {
+                  return { ...ach, earnedAt: backendAch.earnedAt }
+                }
+                return ach
+              })
+              setAchievements(mergedAchievements)
+            } else if (response.status === 404) {
+              // Backend route not found, use local calculations (already set above)
+              console.log('⚠️ Dashboard: Backend achievements endpoint not found (404), using local calculations')
+            } else {
+              // Other error, use local calculations (already set above)
+              console.log(`⚠️ Dashboard: Backend returned ${response.status}, using local calculations`)
             }
-          })
-          if (response.ok) {
-            const data = await response.json()
-            setAchievements(data.achievements || [])
+          } catch (fetchError: any) {
+            clearTimeout(timeoutId)
+            // Backend fetch failed (network error, timeout, etc.), use local calculations (already set above)
+            if (fetchError.name === 'AbortError') {
+              console.log('⚠️ Dashboard: Backend request timed out, using local calculations')
+            } else {
+              console.log('⚠️ Dashboard: Backend fetch failed, using local calculations:', fetchError.message)
+            }
           }
         }
       } catch (error) {
         console.error('Failed to load achievements:', error)
-      } finally {
+        // On error, still try to calculate locally
+        try {
+          const progressData = getProgressData()
+          const allAchievements = Object.entries(ACHIEVEMENT_DEFINITIONS).map(([type, def]) => {
+            const progress = def.getProgress ? def.getProgress(progressData) : 0
+            const earned = progress >= 100
+            return {
+              id: type,
+              type,
+              title: def.title,
+              description: def.description,
+              icon: def.icon,
+              points: def.points,
+              category: def.category,
+              rarity: def.rarity,
+              target: def.target,
+              earned,
+              progress: Math.round(progress),
+              earnedAt: earned ? new Date().toISOString() : null
+            }
+          })
+          setAchievements(allAchievements)
+        } catch (calcError) {
+          console.error('Failed to calculate achievements locally:', calcError)
+        }
         setAchievementsLoading(false)
       }
     }
 
     loadAchievements()
-  }, [])
+  }, [user, lessonProgress])
 
   // Calculate stars: 100 for completed, 50 for in progress
   const starsEarned = completedLessons * 100 + inProgressLessons * 50
@@ -171,7 +448,7 @@ export default function DashboardPage() {
       const stored = localStorage.getItem(`matching-progress-${cat}`)
       if (stored) {
         const rounds = JSON.parse(stored)
-        const requiredRounds = cat === "master" ? 50 : 10
+        const requiredRounds = cat === "master" ? 20 : 10
         if (rounds >= requiredRounds) count++
       }
     })
@@ -272,6 +549,27 @@ export default function DashboardPage() {
     }
   }
 
+  const handleClearProgress = async () => {
+    if (isClearing) return
+    
+    if (!confirm('Are you sure you want to clear all progress? This action cannot be undone.')) {
+      return
+    }
+    
+    setIsClearing(true)
+    try {
+      await clearProgress()
+      // Force page reload to refresh all stats
+      window.location.reload()
+      console.log('✅ Progress cleared successfully')
+    } catch (error) {
+      console.error('❌ Error clearing progress:', error)
+      alert('Failed to clear progress. Please try again.')
+    } finally {
+      setIsClearing(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-backgroundCream via-white to-backgroundCream relative overflow-hidden">
       {/* Background Decorations */}
@@ -304,6 +602,23 @@ export default function DashboardPage() {
           >
             Ready to continue your Kurdish learning journey? Let's pick up where you left off.
           </motion.p>
+          
+          {/* Clear Progress Button (for testing) */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+            className="mt-4"
+          >
+            <button
+              onClick={handleClearProgress}
+              disabled={isClearing}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 hover:border-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Trash2 className="w-4 h-4" />
+              {isClearing ? 'Clearing...' : 'Clear All Progress (Testing)'}
+            </button>
+          </motion.div>
         </motion.div>
 
         {/* Single-user dashboard (child selection removed) */}
@@ -392,11 +707,11 @@ export default function DashboardPage() {
                             <div className="flex-1 bg-gray-200 rounded-full h-2.5 overflow-hidden">
                               <div 
                                 className="bg-gradient-to-r from-primaryBlue to-supportLavender h-full rounded-full transition-all duration-500"
-                                style={{ width: `${progress.progress}%` }}
+                                style={{ width: `${Math.round(progress.progress)}%` }}
                               ></div>
                             </div>
                             <span className="text-xs font-medium text-gray-600 min-w-[50px] text-right">
-                              {progress.progress}%
+                              {Math.round(progress.progress)}%
                             </span>
                           </div>
                           <div className="flex items-center gap-2 mt-2">
@@ -462,7 +777,7 @@ export default function DashboardPage() {
                         }
                         className="bg-gradient-to-r from-primaryBlue to-supportLavender text-white text-xs sm:text-sm px-3 sm:px-4 md:px-5 py-2 sm:py-2.5 rounded-xl hover:from-primaryBlue/90 hover:to-supportLavender/90 transition-all duration-200 shadow-md hover:shadow-lg font-medium whitespace-nowrap ml-2 sm:ml-4"
                       >
-                        {progress.status === 'COMPLETED' ? 'Review' : 
+                        {progress.status === 'COMPLETED' ? 'Completed' : 
                          progress.status === 'IN_PROGRESS' ? 'Continue' : 'Start'}
                       </Link>
                     </motion.div>

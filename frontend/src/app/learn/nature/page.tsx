@@ -1,10 +1,14 @@
 'use client'
 
-import { useState } from 'react'
-import Link from 'next/link'
+import { useState, useEffect, useRef } from 'react'
+import PageContainer from '../../../components/PageContainer'
+import BackLink from '../../../components/BackLink'
 import { motion } from 'framer-motion'
-import { ArrowLeft } from 'lucide-react'
 import AudioButton from '../../../components/lessons/AudioButton'
+import { useProgress } from '../../../contexts/ProgressContext'
+import { restoreRefsFromProgress } from '../../../lib/progressHelper'
+
+const LESSON_ID = '11' // Nature lesson ID
 
 // Helper function to sanitize Kurdish text for filename lookup (same as AudioButton)
 function getAudioFilename(text: string): string {
@@ -110,6 +114,25 @@ const naturePhrases: NaturePhrase[] = [
 ]
 
 export default function NaturePage() {
+  const { updateLessonProgress, getLessonProgress } = useProgress()
+  
+  // Progress tracking configuration
+  const progressConfig = {
+    totalAudios: 42, // 5 trees + 5 flowers + 9 landscapes + 7 weather + 6 plants = 32 items + 10 phrases = 42
+    hasPractice: false,
+    audioWeight: 50,
+    timeWeight: 50,
+    audioMultiplier: 100 / 42, // ~2.38% per audio
+  }
+  
+  // Initialize refs - will be restored in useEffect
+  const storedProgress = getLessonProgress(LESSON_ID)
+  const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig)
+  const startTimeRef = useRef<number>(estimatedStartTime)
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set())
+  const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays)
+  const refsInitializedRef = useRef(false)
+
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [showAllItems, setShowAllItems] = useState(false)
 
@@ -119,13 +142,168 @@ export default function NaturePage() {
 
   const displayedItems = showAllItems ? filteredItems : filteredItems.slice(0, 12)
 
+  // Calculate progress based on unique audios played and time spent
+  const calculateProgress = (): number => {
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const storedProgress = currentProgress?.progress || 0
+    
+    // Calculate total unique audios played (base + session)
+    const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size
+    const effectiveUniqueAudios = Math.min(totalUniqueAudios, progressConfig.totalAudios)
+    
+    // Audio progress: 50% weight
+    const audioProgress = Math.min(progressConfig.audioWeight, (effectiveUniqueAudios / progressConfig.totalAudios) * progressConfig.audioWeight)
+    
+    // Time progress: 50% weight (3 minutes = 50%)
+    const baseTimeSpent = currentProgress?.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const timeProgress = Math.min(progressConfig.timeWeight, (totalTimeSpent / 3) * progressConfig.timeWeight)
+    
+    // Combined progress
+    let calculatedProgress = audioProgress + timeProgress
+    
+    // Special case: if all audios are played, force 100% completion (prioritizing audio completion)
+    if (effectiveUniqueAudios >= progressConfig.totalAudios) {
+      calculatedProgress = 100
+    }
+    
+    // Prevent progress from decreasing
+    return Math.max(storedProgress, Math.round(calculatedProgress))
+  }
+
+  // Handle audio play - track unique audios
+  const handleAudioPlay = (audioKey: string) => {
+    // Track unique audios played (only count new ones) - check BEFORE adding
+    if (uniqueAudiosPlayedRef.current.has(audioKey)) {
+      // Already played this audio, don't update progress
+      console.log('🔇 Audio already played, skipping:', audioKey)
+      return
+    }
+    
+    console.log('🔊 New unique audio played:', audioKey, 'Total unique:', uniqueAudiosPlayedRef.current.size + 1)
+    uniqueAudiosPlayedRef.current.add(audioKey)
+    
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress?.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const safeTimeSpent = Math.min(1000, totalTimeSpent)
+    
+    const progress = calculateProgress()
+    
+    // Set status to COMPLETED when progress reaches 100%, otherwise preserve existing status or set to IN_PROGRESS
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress?.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS')
+    
+    console.log('📊 Progress update:', {
+      progress,
+      status,
+      uniqueAudios: uniqueAudiosPlayedRef.current.size,
+      audioKey,
+    })
+    
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent)
+  }
+
+  // Initial setup: restore refs from stored progress and mark lesson as in progress
+  useEffect(() => {
+    if (refsInitializedRef.current) {
+      return
+    }
+
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Mark lesson as IN_PROGRESS if not already completed
+    if (currentProgress?.status === 'NOT_STARTED') {
+      updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS')
+    }
+    
+    // Restore refs from stored progress (only once)
+    if (currentProgress) {
+      const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig)
+      startTimeRef.current = estimatedStartTime
+      
+      // Only restore baseAudioPlaysRef if progress is significant (>20%)
+      if (currentProgress.progress > 20) {
+        baseAudioPlaysRef.current = Math.min(estimatedAudioPlays, progressConfig.totalAudios)
+      } else {
+        baseAudioPlaysRef.current = 0
+        console.log('🔄 Progress is low (<20%), resetting baseAudioPlaysRef to 0 for accurate tracking')
+      }
+      
+      // Safety check: if baseAudioPlaysRef is already at or near totalAudios, reset it
+      if (baseAudioPlaysRef.current >= progressConfig.totalAudios - 2) {
+        console.warn('⚠️ baseAudioPlaysRef is too high, resetting to 0 to prevent progress jump')
+        baseAudioPlaysRef.current = 0
+      }
+      
+      // Check if progress is 100% but status is not COMPLETED
+      if (currentProgress.progress >= 100 && currentProgress.status !== 'COMPLETED') {
+        console.log('✅ Progress is 100% but status is not COMPLETED, updating status...')
+        updateLessonProgress(LESSON_ID, currentProgress.progress, 'COMPLETED', undefined, currentProgress.timeSpent)
+      }
+    }
+    
+    refsInitializedRef.current = true
+  }, [getLessonProgress, updateLessonProgress])
+
+  // Periodic progress update based on time spent
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const currentProgress = getLessonProgress(LESSON_ID)
+      const progress = calculateProgress()
+      
+      // Only update if progress changed
+      if (progress !== currentProgress.progress) {
+        const baseTimeSpent = currentProgress?.timeSpent || 0
+        const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+        const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+        const safeTimeSpent = Math.min(1000, totalTimeSpent)
+        
+        const status = progress >= 100 ? 'COMPLETED' : (currentProgress?.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS')
+        updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent)
+      }
+    }, 30000) // Update every 30 seconds
+    
+    return () => clearInterval(interval)
+  }, [getLessonProgress, updateLessonProgress])
+
+  // Recovery check: if all audios are played but progress is not 100%
+  useEffect(() => {
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size
+    
+    if (totalUniqueAudios >= progressConfig.totalAudios && currentProgress.progress < 100) {
+      console.log('🔍 All audios played but progress is not 100%, forcing to 100%...')
+      updateLessonProgress(LESSON_ID, 100, 'COMPLETED', undefined, currentProgress.timeSpent)
+    }
+  }, [getLessonProgress, updateLessonProgress])
+
+  // Check on page visibility change (when user comes back to tab)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const currentProgress = getLessonProgress(LESSON_ID)
+        const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size
+        
+        if (totalUniqueAudios >= progressConfig.totalAudios && currentProgress.progress < 100) {
+          console.log('👁️ Page visible - fixing progress to 100% (all audios played)')
+          updateLessonProgress(LESSON_ID, 100, 'COMPLETED', undefined, currentProgress.timeSpent)
+        }
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [getLessonProgress, updateLessonProgress])
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-blue-50">
-      <div className="container mx-auto px-4 py-6">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center">Nature</h1>
-        </div>
+      <PageContainer>
+        <BackLink />
+        <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center mb-6">Nature</h1>
 
         {/* Description */}
         <motion.div 
@@ -133,9 +311,6 @@ export default function NaturePage() {
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-8"
         >
-          <p className="text-gray-700 mb-8 text-center max-w-2xl mx-auto">
-            Discover the beauty of nature through Kurdish vocabulary. Learn about trees, flowers, mountains, and natural landscapes.
-          </p>
         </motion.div>
 
         {/* Category Filter */}
@@ -185,8 +360,9 @@ export default function NaturePage() {
                     kurdishText={item.kurdish} 
                     phoneticText={item.english.toUpperCase()} 
                     label="Listen"
-                    size="medium"
+                    size="small"
                     audioFile={item.audioFile ? `/audio/kurdish-tts-mp3/nature/${item.audioFile}` : undefined}
+                    onPlay={(audioKey) => handleAudioPlay(audioKey || `nature-item-${item.id}-${item.kurdish}`)}
                   />
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-100 to-emerald-200 flex items-center justify-center shadow">
                     <span className="text-xl">{item.icon}</span>
@@ -233,7 +409,6 @@ export default function NaturePage() {
             Nature Phrases
           </h2>
           <p className="text-gray-600 text-sm mb-4">
-            Learn how to use nature words in sentences
           </p>
           <div className="grid sm:grid-cols-1 md:grid-cols-2 gap-4">
             {naturePhrases.map((phrase, index) => (
@@ -256,6 +431,7 @@ export default function NaturePage() {
                       label="Listen"
                       size="small"
                       audioFile={`/audio/kurdish-tts-mp3/nature/${phrase.audioFile}`}
+                      onPlay={(audioKey) => handleAudioPlay(audioKey || `nature-phrase-${phrase.id}-${phrase.kurdish}`)}
                     />
                   </div>
                 </div>
@@ -297,7 +473,7 @@ export default function NaturePage() {
             </div>
           </div>
         </motion.div>
-      </div>
+      </PageContainer>
     </div>
   )
 }

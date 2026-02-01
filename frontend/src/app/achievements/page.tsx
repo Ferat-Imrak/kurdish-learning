@@ -6,6 +6,7 @@ import { Trophy, Star, Target, Award, Medal, Crown, Zap, Heart, ArrowLeft, BookO
 import { useState, useEffect, useRef } from 'react'
 import { getAchievements, checkAchievements } from '../../lib/api'
 import { useAuth } from '../providers'
+import { useProgress } from '../../contexts/ProgressContext'
 
 const categories = {
   Learning: { color: "bg-blue-100 text-blue-800", icon: "📚" },
@@ -207,26 +208,73 @@ type Achievement = {
 
 export default function AchievementsPage() {
   const { user } = useAuth()
+  const { lessonProgress } = useProgress()
   const [achievements, setAchievements] = useState<Achievement[]>([])
   const [loading, setLoading] = useState(true)
   const [newlyUnlocked, setNewlyUnlocked] = useState<string[]>([])
 
-  // Helper functions to check game progress from localStorage
+  // Helper functions to check game progress from localStorage and ProgressContext
   const getProgressData = () => {
     if (typeof window === 'undefined') return {}
 
-    // Check lesson progress
-    const lessonProgressKey = Object.keys(localStorage).find(key => key.startsWith('lessonProgress_'))
+    // Check lesson progress from ProgressContext (more reliable)
     let lessonsCompletedCount = 0
-    if (lessonProgressKey) {
-      try {
-        const lessonProgress = JSON.parse(localStorage.getItem(lessonProgressKey) || '{}')
-        lessonsCompletedCount = Object.values(lessonProgress).filter(
+    try {
+      // Try ProgressContext first, then localStorage
+      // ProgressContext structure: Record<string, LessonProgress> where LessonProgress has lessonId property
+      // localStorage structure: Record<string, {status, progress, ...}> where key is lessonId
+      
+      let progressSource = 'none'
+      let progressData: Record<string, any> = {}
+      
+      if (lessonProgress && Object.keys(lessonProgress).length > 0) {
+        // Use ProgressContext - structure has lessonId as property
+        progressData = lessonProgress
+        progressSource = 'ProgressContext'
+        const completedLessons = Object.values(lessonProgress).filter(
+          (lesson: any) => lesson.status === 'COMPLETED'
+        )
+        lessonsCompletedCount = completedLessons.length
+        console.log('📊 Achievements: Using ProgressContext -', {
+          totalLessons: Object.keys(lessonProgress).length,
+          completedCount: lessonsCompletedCount,
+          completedLessonIds: completedLessons.map((l: any) => l.lessonId || l.lessonId),
+          sampleLesson: Object.values(lessonProgress)[0]
+        })
+      }
+      
+      // Always also check localStorage as fallback/verification
+      const lessonProgressKey = Object.keys(localStorage).find(key => key.startsWith('lessonProgress_'))
+      if (lessonProgressKey) {
+        const lessonProgressData = JSON.parse(localStorage.getItem(lessonProgressKey) || '{}')
+        const localStorageCompletedCount = Object.values(lessonProgressData).filter(
           (lesson: any) => lesson.status === 'COMPLETED'
         ).length
-      } catch (error) {
-        console.error('Failed to parse lesson progress:', error)
+        
+        console.log('📊 Achievements: localStorage check -', {
+          key: lessonProgressKey,
+          totalLessons: Object.keys(lessonProgressData).length,
+          completedCount: localStorageCompletedCount,
+          completedLessonIds: Object.keys(lessonProgressData).filter(
+            (id: string) => lessonProgressData[id]?.status === 'COMPLETED'
+          ),
+          sampleLesson: lessonProgressData[Object.keys(lessonProgressData)[0]]
+        })
+        
+        // Use localStorage count if ProgressContext is empty or has fewer
+        if (progressSource === 'none' || localStorageCompletedCount > lessonsCompletedCount) {
+          lessonsCompletedCount = localStorageCompletedCount
+          progressSource = 'localStorage'
+          progressData = lessonProgressData
+          console.log('✅ Achievements: Using localStorage as source (ProgressContext empty or has fewer)')
+        }
       }
+      
+      if (progressSource === 'none') {
+        console.log('⚠️ Achievements: No lesson progress found in ProgressContext or localStorage')
+      }
+    } catch (error) {
+      console.error('❌ Failed to parse lesson progress:', error)
     }
 
     // Check flashcards
@@ -253,7 +301,7 @@ export default function AchievementsPage() {
       const stored = localStorage.getItem(`matching-progress-${cat}`)
       if (!stored) return false
       const rounds = JSON.parse(stored)
-      return rounds >= (cat === "master" ? 50 : 10)
+      return rounds >= (cat === "master" ? 20 : 10)
     })
 
     // Check word builder
@@ -307,54 +355,87 @@ export default function AchievementsPage() {
       try {
         // Get progress data and check achievements (works even without auth)
         const progressData = getProgressData()
-        if (user) {
-          const checkResult = await checkAchievements(progressData)
-          
-          // Show notifications for newly earned achievements
-          if (checkResult?.newlyEarned && checkResult.newlyEarned.length > 0) {
-            setNewlyUnlocked(checkResult.newlyEarned)
-            // Auto-hide notifications after 5 seconds
-            setTimeout(() => {
-              setNewlyUnlocked([])
-            }, 5000)
+        console.log('🎯 Achievements: Progress data for achievements:', {
+          lessonsCompletedCount: progressData.lessonsCompletedCount,
+          allData: progressData
+        })
+        // Always calculate achievements locally first (works with or without backend)
+        const allAchievements = Object.entries(ACHIEVEMENT_DEFINITIONS).map(([type, def]) => {
+          const progress = def.getProgress ? def.getProgress(progressData) : 0
+          const earned = progress >= 100
+          return {
+            id: type,
+            type,
+            title: def.title,
+            description: def.description,
+            icon: def.icon,
+            points: def.points,
+            category: def.category,
+            rarity: def.rarity,
+            target: def.target,
+            earned,
+            progress: Math.round(progress),
+            earnedAt: earned ? new Date().toISOString() : null
           }
-          
-          // Fetch achievements with progress data
-          const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
-          const progressDataStr = encodeURIComponent(JSON.stringify(progressData))
-          const response = await fetch(`${API_BASE_URL}/achievements?progressData=${progressDataStr}`, {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
+        })
+        
+        // If user is authenticated, try to sync with backend (but don't fail if it doesn't exist)
+        if (user) {
+          try {
+            const checkResult = await checkAchievements(progressData)
+            
+            // Show notifications for newly earned achievements
+            if (checkResult?.newlyEarned && checkResult.newlyEarned.length > 0) {
+              setNewlyUnlocked(checkResult.newlyEarned)
+              // Auto-hide notifications after 5 seconds
+              setTimeout(() => {
+                setNewlyUnlocked([])
+              }, 5000)
             }
-          })
-          if (response.ok) {
-            const data = await response.json()
-            setAchievements(data.achievements || [])
-          } else {
-            // Fallback to basic fetch
-            const data = await getAchievements()
-            setAchievements(data.achievements || [])
+            
+            // Try to fetch from backend, but fallback to local if it fails
+            try {
+              const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+              const progressDataStr = encodeURIComponent(JSON.stringify(progressData))
+              const response = await fetch(`${API_BASE_URL}/achievements?progressData=${progressDataStr}`, {
+                headers: {
+                  'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
+                }
+              })
+              if (response.ok) {
+                const data = await response.json()
+                // Merge backend data with local calculations (backend might have earnedAt dates)
+                const backendAchievements = (data.achievements || []).reduce((acc: any, ach: any) => {
+                  acc[ach.type] = ach
+                  return acc
+                }, {})
+                
+                // Use local calculations but preserve backend earnedAt dates
+                const mergedAchievements = allAchievements.map(ach => {
+                  const backendAch = backendAchievements[ach.type]
+                  if (backendAch && backendAch.earnedAt) {
+                    return { ...ach, earnedAt: backendAch.earnedAt }
+                  }
+                  return ach
+                })
+                setAchievements(mergedAchievements)
+              } else {
+                // Backend not available, use local calculations
+                console.log('⚠️ Achievements: Backend not available, using local calculations')
+                setAchievements(allAchievements)
+              }
+            } catch (fetchError) {
+              // Backend fetch failed, use local calculations
+              console.log('⚠️ Achievements: Backend fetch failed, using local calculations:', fetchError)
+              setAchievements(allAchievements)
+            }
+          } catch (checkError) {
+            // checkAchievements failed, but we still have local calculations
+            console.log('⚠️ Achievements: checkAchievements failed, using local calculations:', checkError)
+            setAchievements(allAchievements)
           }
         } else {
-          // Not authenticated, use local definitions to show all achievements
-          const allAchievements = Object.entries(ACHIEVEMENT_DEFINITIONS).map(([type, def]) => {
-            const progress = def.getProgress ? def.getProgress(progressData) : 0
-            const earned = progress >= 100
-            return {
-              id: type,
-              type,
-              title: def.title,
-              description: def.description,
-              icon: def.icon,
-              points: def.points,
-              category: def.category,
-              rarity: def.rarity,
-              target: def.target,
-              earned,
-              progress: Math.round(progress),
-              earnedAt: earned ? new Date().toISOString() : null
-            }
-          })
+          // Not authenticated, use local definitions
           setAchievements(allAchievements)
         }
       } catch (error) {
@@ -367,7 +448,7 @@ export default function AchievementsPage() {
     }
 
     loadAchievements()
-  }, [user])
+  }, [user, lessonProgress])
 
   // Group achievements by category and sort by points within each category
   const groupedAchievements = achievements.reduce((acc, achievement) => {

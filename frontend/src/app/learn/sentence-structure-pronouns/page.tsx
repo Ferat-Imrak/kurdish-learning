@@ -1,11 +1,13 @@
 "use client"
 
-import Link from "next/link"
+import PageContainer from "../../../components/PageContainer"
+import BackLink from "../../../components/BackLink"
 import { useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { ArrowLeft, CheckCircle, XCircle, RotateCcw } from "lucide-react"
+import { CheckCircle, XCircle, RotateCcw } from "lucide-react"
 import AudioButton from "../../../components/lessons/AudioButton"
 import { useProgress } from "../../../contexts/ProgressContext"
+import { restoreRefsFromProgress } from "../../../lib/progressHelper"
 
 // Helper function to sanitize Kurdish text for filename lookup
 function getAudioFilename(text: string): string {
@@ -230,40 +232,183 @@ const practiceExercises = [
 
 export default function SentenceStructurePronounsPage() {
   const { updateLessonProgress, getLessonProgress } = useProgress()
-  const startTimeRef = useRef<number>(Date.now())
-  const audioPlaysRef = useRef<number>(0)
+  
+  // Progress tracking configuration
+  const progressConfig = {
+    totalAudios: 20, // Counted from presentTenseExamples sections
+    hasPractice: true,
+    audioWeight: 30,
+    timeWeight: 20,
+    practiceWeight: 50,
+    audioMultiplier: 1.5, // 30% / 20 audios = 1.5% per audio
+  }
+  
+  // Initialize refs - will be restored in useEffect
+  const storedProgress = getLessonProgress(LESSON_ID)
+  const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig)
+  const startTimeRef = useRef<number>(estimatedStartTime)
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set())
+  const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays)
+  const refsInitializedRef = useRef(false)
+  
   const [mode, setMode] = useState<'learn' | 'practice'>('learn')
   const [currentExercise, setCurrentExercise] = useState(0)
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
   const [showFeedback, setShowFeedback] = useState(false)
   const [score, setScore] = useState({ correct: 0, total: 0 })
   const [isCompleted, setIsCompleted] = useState(false)
+  const [practiceScore, setPracticeScore] = useState<number | undefined>(undefined)
+  const [practicePassed, setPracticePassed] = useState(false)
 
-  // Mark lesson as in progress on mount
+  // Initialize refs from stored progress - ONLY ONCE on mount
   useEffect(() => {
+    if (refsInitializedRef.current) {
+      return
+    }
+
     const progress = getLessonProgress(LESSON_ID)
+    console.log('🚀 Sentence Structure & Pronouns page mounted, initial progress:', {
+      progress: progress.progress,
+      status: progress.status,
+      score: progress.score,
+      timeSpent: progress.timeSpent,
+    })
+    
+    // Mark lesson as in progress on mount
     if (progress.status === 'NOT_STARTED') {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS')
     }
-  }, [getLessonProgress, updateLessonProgress])
+    
+    // Restore refs from stored progress - ONLY ONCE on mount
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig)
+    startTimeRef.current = estimatedStartTime
+    
+    // Only restore baseAudioPlaysRef if progress is significant (>20%)
+    if (currentProgress.progress > 20) {
+      baseAudioPlaysRef.current = Math.min(estimatedAudioPlays, progressConfig.totalAudios)
+    } else {
+      baseAudioPlaysRef.current = 0
+      console.log('🔄 Progress is low (<20%), resetting baseAudioPlaysRef to 0 for accurate tracking')
+    }
+    
+    // Safety check: if baseAudioPlaysRef is already at or near totalAudios, reset it
+    if (baseAudioPlaysRef.current >= progressConfig.totalAudios - 2) {
+      console.warn('⚠️ baseAudioPlaysRef is too high, resetting to 0 to prevent progress jump')
+      baseAudioPlaysRef.current = 0
+    }
+    
+    // Restore practice score if it exists
+    if (currentProgress.score !== undefined) {
+      setPracticeScore(currentProgress.score)
+      setPracticePassed(currentProgress.score >= 70)
+    }
+    
+    // Check if progress is 100% but status is not COMPLETED
+    if (currentProgress.progress >= 100 && currentProgress.status !== 'COMPLETED') {
+      console.log('✅ Progress is 100% but status is not COMPLETED, updating status...')
+      updateLessonProgress(LESSON_ID, currentProgress.progress, 'COMPLETED', currentProgress.score, currentProgress.timeSpent)
+    }
+    
+    // Mark refs as initialized to prevent re-initialization
+    refsInitializedRef.current = true
+    
+    console.log('🔄 Restored refs (ONCE on mount):', {
+      storedProgress: currentProgress.progress,
+      estimatedAudioPlays,
+      baseAudioPlaysRef: baseAudioPlaysRef.current,
+      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
+      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
+    })
+  }, []) // Empty dependency array - only run once on mount
 
   const calculateProgress = (practiceScore?: number) => {
-    const timeSpent = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60) // minutes
-    // Audio clicks: max 30% (10 clicks = 30%)
-    const audioProgress = Math.min(30, audioPlaysRef.current * 3)
-    // Time spent: max 20% (4 minutes = 20%)
-    const timeProgress = Math.min(20, timeSpent * 5)
-    // Practice score: max 50% (if practice exists)
-    const practiceProgress = practiceScore !== undefined ? Math.min(50, practiceScore * 0.5) : 0
-    return Math.min(100, audioProgress + timeProgress + practiceProgress)
+    // Get current progress to access latest timeSpent
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const storedProgress = currentProgress.progress || 0
+    
+    // Calculate total unique audios played (base + session)
+    const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size
+    
+    // Audio progress: 30% weight (1.5% per audio, max 30%)
+    const audioProgress = Math.min(progressConfig.audioWeight, totalUniqueAudios * progressConfig.audioMultiplier)
+    
+    // Time progress: 20% weight
+    const baseTimeSpent = currentProgress.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const safeTimeSpent = Math.min(1000, totalTimeSpent)
+    const timeProgress = Math.min(progressConfig.timeWeight, safeTimeSpent * 0.2) // 1 minute = 0.2%, max 20%
+    
+    // Practice progress: 50% weight (if practice exists)
+    let practiceProgress = 0
+    if (practiceScore !== undefined) {
+      practiceProgress = (practiceScore / 100) * progressConfig.practiceWeight
+    }
+    
+    // Calculate total progress
+    let calculatedProgress = audioProgress + timeProgress + practiceProgress
+    
+    // Special case: If practice score >= 70, force progress to 100%
+    if (practiceScore !== undefined && practiceScore >= 70) {
+      calculatedProgress = 100
+    }
+    
+    // Prevent progress from decreasing - always use max of stored and calculated
+    const totalProgress = Math.max(storedProgress, calculatedProgress)
+    
+    // Round to whole number
+    const roundedProgress = Math.round(totalProgress)
+    
+    console.log('📊 Progress calculation:', {
+      totalUniqueAudios,
+      audioProgress: audioProgress.toFixed(2),
+      totalTimeSpent,
+      timeProgress: timeProgress.toFixed(2),
+      practiceScore,
+      practiceProgress: practiceProgress.toFixed(2),
+      calculatedProgress: calculatedProgress.toFixed(2),
+      storedProgress,
+      totalProgress: roundedProgress,
+    })
+    
+    return roundedProgress
   }
 
-  const handleAudioPlay = () => {
-    audioPlaysRef.current += 1
+  const handleAudioPlay = (audioKey: string) => {
+    // Track unique audios played (only count new ones) - check BEFORE adding
+    if (uniqueAudiosPlayedRef.current.has(audioKey)) {
+      // Already played this audio, don't update progress
+      console.log('🔇 Audio already played, skipping:', audioKey)
+      return
+    }
+    
+    console.log('🔊 New unique audio played:', audioKey, 'Total unique:', uniqueAudiosPlayedRef.current.size + 1)
+    uniqueAudiosPlayedRef.current.add(audioKey)
+    
     const currentProgress = getLessonProgress(LESSON_ID)
-    const practiceScore = currentProgress.score !== undefined ? (currentProgress.score / 100) * 100 : undefined
-    const progress = calculateProgress(practiceScore)
-    updateLessonProgress(LESSON_ID, progress, 'IN_PROGRESS')
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const safeTimeSpent = Math.min(1000, totalTimeSpent)
+    
+    // Get practice score from state or stored progress
+    const currentPracticeScore = practiceScore !== undefined ? practiceScore : (currentProgress.score !== undefined ? currentProgress.score : undefined)
+    const progress = calculateProgress(currentPracticeScore)
+    
+    // Set status to COMPLETED when progress reaches 100%, otherwise preserve existing status or set to IN_PROGRESS
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS')
+    
+    console.log('📊 Progress update:', {
+      progress,
+      status,
+      uniqueAudios: uniqueAudiosPlayedRef.current.size,
+      audioKey,
+    })
+    
+    updateLessonProgress(LESSON_ID, progress, status, currentPracticeScore, safeTimeSpent)
   }
 
   const handleAnswerSelect = (index: number) => {
@@ -284,19 +429,95 @@ export default function SentenceStructurePronounsPage() {
       setShowFeedback(false)
     } else {
       // Calculate practice score percentage
-      const practiceScorePercent = (score.correct / score.total) * 100
-      const isPracticePassed = practiceScorePercent >= 80
+      const practiceScorePercent = Math.round((score.correct / score.total) * 100)
+      const isPracticePassed = practiceScorePercent >= 70 // Match pattern: >= 70 for completion
       
       setIsCompleted(isPracticePassed)
+      setPracticeScore(practiceScorePercent)
+      setPracticePassed(isPracticePassed)
       
-      // Calculate combined progress
+      // Calculate total time spent (base + session)
+      const currentProgress = getLessonProgress(LESSON_ID)
+      const baseTimeSpent = currentProgress?.timeSpent || 0
+      const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+      const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+      const safeTimeSpent = Math.min(1000, totalTimeSpent)
+      
+      // Calculate combined progress (will force to 100% if score >= 70)
       const progress = calculateProgress(practiceScorePercent)
       
-      // Only mark lesson as completed if practice is passed
+      // Mark lesson as completed if practice is passed (score >= 70)
       const status = isPracticePassed ? 'COMPLETED' : 'IN_PROGRESS'
-      updateLessonProgress(LESSON_ID, progress, status, practiceScorePercent)
+      
+      console.log('🎯 Practice completed:', {
+        practiceScorePercent,
+        isPracticePassed,
+        progress,
+        status,
+      })
+      
+      updateLessonProgress(LESSON_ID, progress, status, practiceScorePercent, safeTimeSpent)
     }
   }
+  
+  // Check if practice was already completed (score exists) but progress doesn't reflect it
+  useEffect(() => {
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Case 1: Practice score exists and >= 70, but progress is not 100% - FORCE to 100%
+    if (currentProgress.score !== undefined && currentProgress.score >= 70 && currentProgress.progress < 100) {
+      console.log('🔍 Practice score >= 70 but progress is not 100%, forcing to 100%...', {
+        storedProgress: currentProgress.progress,
+        storedScore: currentProgress.score,
+      })
+      
+      // Force progress to 100% when practice is completed (score >= 70)
+      const shouldBeCompleted = currentProgress.score >= 70
+      const newStatus = shouldBeCompleted ? 'COMPLETED' : currentProgress.status
+      
+      console.log('🔄 Forcing progress to 100% because practice score >= 70:', {
+        newProgress: 100,
+        newStatus,
+        storedScore: currentProgress.score,
+        oldProgress: currentProgress.progress,
+      })
+      
+      // Always update to 100% if score >= 70
+      updateLessonProgress(LESSON_ID, 100, newStatus, currentProgress.score, currentProgress.timeSpent)
+    }
+  }, [getLessonProgress, updateLessonProgress])
+  
+  // Listen for progress updates (including from backend sync) and fix if needed
+  useEffect(() => {
+    const handleProgressUpdate = () => {
+      const currentProgress = getLessonProgress(LESSON_ID)
+      // If practice score >= 70 but progress is not 100%, force it to 100%
+      if (currentProgress.score !== undefined && currentProgress.score >= 70 && currentProgress.progress < 100) {
+        console.log('🔧 Progress update detected - fixing progress to 100% (score >= 70)')
+        updateLessonProgress(LESSON_ID, 100, 'COMPLETED', currentProgress.score, currentProgress.timeSpent)
+      }
+    }
+    
+    window.addEventListener('lessonProgressUpdated', handleProgressUpdate)
+    return () => window.removeEventListener('lessonProgressUpdated', handleProgressUpdate)
+  }, [getLessonProgress, updateLessonProgress])
+  
+  // Check on page visibility change (when user comes back to tab)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const currentProgress = getLessonProgress(LESSON_ID)
+        // If practice score >= 70 but progress is not 100%, force it to 100%
+        if (currentProgress.score !== undefined && currentProgress.score >= 70 && currentProgress.progress < 100) {
+          console.log('👁️ Page visible - fixing progress to 100% (score >= 70)')
+          updateLessonProgress(LESSON_ID, 100, 'COMPLETED', currentProgress.score, currentProgress.timeSpent)
+        }
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [getLessonProgress, updateLessonProgress])
 
   const handleRestart = () => {
     setCurrentExercise(0)
@@ -324,22 +545,14 @@ export default function SentenceStructurePronounsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
-      <div className="container mx-auto px-4 py-6">
-        <div className="mb-6">
-          <Link href="/learn" className="text-kurdish-red font-bold flex items-center gap-2 mb-4">
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </Link>
-          <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center">
-            Sentence Structure & Pronouns
-          </h1>
-          <p className="text-gray-700 mt-4 text-center max-w-2xl mx-auto">
-            Learn the basic word order and essential pronouns in Kurdish. Perfect for beginners!
-          </p>
-        </div>
+      <PageContainer>
+        <BackLink />
+        <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center mb-6">
+          Sentence Structure & Pronouns
+        </h1>
 
         {/* Mode Toggle */}
-        <div className="flex justify-center gap-2 mb-6">
+        <div className="flex justify-center gap-2 mb-8">
           <button
             onClick={() => setMode('learn')}
             className={`px-6 py-2 rounded-lg font-semibold transition-all ${
@@ -493,22 +706,19 @@ export default function SentenceStructurePronounsPage() {
                         transition={{ delay: sectionIndex * 0.1 + exampleIndex * 0.05 }}
                         className="p-4 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-100"
                       >
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-start justify-between gap-3">
                           <div className="flex-1">
-                            <div className="flex items-center gap-4 mb-2">
-                              <div className="text-kurdish-red font-medium text-lg">{example.ku}</div>
-                              <div className="text-gray-400 text-xl">|</div>
-                              <div className="text-gray-600 text-lg">{example.en}</div>
-                            </div>
+                            <div className="font-bold text-kurdish-red mb-1">{example.ku}</div>
+                            <div className="text-sm text-gray-600">{example.en}</div>
                           </div>
                           {example.audio && (
                             <AudioButton
                               kurdishText={example.audioText || example.ku}
                               phoneticText={example.en}
                               audioFile={'audioFile' in example ? (example as any).audioFile : undefined}
-                              label="Play"
+                              label="Listen"
                               size="small"
-                              onPlay={handleAudioPlay}
+                              onPlay={(audioKey) => handleAudioPlay(audioKey || `example-${sectionIndex}-${exampleIndex}`)}
                             />
                           )}
                         </div>
@@ -636,7 +846,7 @@ export default function SentenceStructurePronounsPage() {
             )}
           </div>
         )}
-      </div>
+      </PageContainer>
     </div>
   )
 }

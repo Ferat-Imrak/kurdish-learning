@@ -1,11 +1,13 @@
 "use client"
 
-import Link from "next/link"
 import { useState, useEffect, useRef } from "react"
 import { motion } from "framer-motion"
-import { ArrowLeft, CheckCircle, XCircle, RotateCcw } from "lucide-react"
+import { CheckCircle, XCircle, RotateCcw } from "lucide-react"
+import PageContainer from "../../../components/PageContainer"
+import BackLink from "../../../components/BackLink"
 import AudioButton from "../../../components/lessons/AudioButton"
 import { useProgress } from "../../../contexts/ProgressContext"
+import { restoreRefsFromProgress } from "../../../lib/progressHelper"
 
 // Helper function to sanitize Kurdish text for filename lookup
 function getAudioFilename(text: string): string {
@@ -23,6 +25,16 @@ function getAudioFilename(text: string): string {
 }
 
 const LESSON_ID = '17' // Simple Future Tense lesson ID
+
+// Progress configuration
+const progressConfig = {
+  totalAudios: 76, // 8 verbs × 7 audios each (1 infinitive + 6 conjugations: Ez, Tu, Ew, Em, Hûn, Ewan) = 56 + 20 examples = 76
+  hasPractice: true,
+  audioWeight: 30,
+  timeWeight: 20,
+  practiceWeight: 50,
+  audioMultiplier: 100 / 76, // ~1.32% per audio
+}
 
 // Conjugation table data
 const conjugationTable = [
@@ -243,41 +255,140 @@ const practiceExercises = [
 
 export default function SimpleFuturePage() {
   const { updateLessonProgress, getLessonProgress } = useProgress()
+  
+  // Refs for progress tracking
   const startTimeRef = useRef<number>(Date.now())
-  const audioPlaysRef = useRef<number>(0)
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set())
+  const baseAudioPlaysRef = useRef<number>(0)
+  const refsInitializedRef = useRef<boolean>(false)
+
   const [mode, setMode] = useState<'learn' | 'practice'>('learn')
   const [currentExercise, setCurrentExercise] = useState(0)
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
   const [showFeedback, setShowFeedback] = useState(false)
   const [score, setScore] = useState({ correct: 0, total: 0 })
   const [isCompleted, setIsCompleted] = useState(false)
+  const [practiceScore, setPracticeScore] = useState<number | undefined>(undefined)
+  const [practicePassed, setPracticePassed] = useState(false)
 
-  // Mark lesson as in progress on mount
+  // Calculate progress based on unique audios played, time spent, and practice score
+  const calculateProgress = (currentPracticeScore?: number): number => {
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const storedProgress = currentProgress?.progress || 0
+    
+    // Calculate total unique audios played (base + session)
+    const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size
+    const effectiveUniqueAudios = Math.min(totalUniqueAudios, progressConfig.totalAudios)
+    
+    // Audio progress: 30% weight
+    const audioProgress = Math.min(progressConfig.audioWeight, (effectiveUniqueAudios / progressConfig.totalAudios) * progressConfig.audioWeight)
+    
+    // Time progress: 20% weight (3 minutes = 20%)
+    const baseTimeSpent = currentProgress?.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const timeProgress = Math.min(progressConfig.timeWeight, (totalTimeSpent / 3) * progressConfig.timeWeight)
+    
+    // Practice progress: 50% weight (use current score or stored score)
+    const practiceScoreToUse = currentPracticeScore !== undefined 
+      ? currentPracticeScore 
+      : (currentProgress?.score !== undefined ? currentProgress.score : 0)
+    const practiceProgress = progressConfig.hasPractice 
+      ? (practiceScoreToUse / 100) * progressConfig.practiceWeight 
+      : 0
+    
+    // Combined progress
+    let calculatedProgress = audioProgress + timeProgress + practiceProgress
+    
+    // Special case: if practice score is >= 70%, force 100% completion
+    if (practiceScoreToUse >= 70) {
+      calculatedProgress = 100
+    }
+    
+    // Prevent progress from decreasing
+    return Math.max(storedProgress, Math.round(calculatedProgress))
+  }
+
+  // Handle audio play - track unique audios
+  const handleAudioPlay = (audioKey: string) => {
+    // Track unique audios played (only count new ones) - check BEFORE adding
+    if (uniqueAudiosPlayedRef.current.has(audioKey)) {
+      // Already played this audio, don't update progress
+      console.log('🔇 Audio already played, skipping:', audioKey)
+      return
+    }
+    
+    console.log('🔊 New unique audio played:', audioKey, 'Total unique:', uniqueAudiosPlayedRef.current.size + 1)
+    uniqueAudiosPlayedRef.current.add(audioKey)
+    
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress?.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const safeTimeSpent = Math.min(1000, totalTimeSpent)
+    
+    // Get practice score from state or stored progress
+    const currentPracticeScore = practiceScore !== undefined ? practiceScore : (currentProgress?.score !== undefined ? currentProgress.score : undefined)
+    const progress = calculateProgress(currentPracticeScore)
+    
+    // Set status to COMPLETED when progress reaches 100%, otherwise preserve existing status or set to IN_PROGRESS
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress?.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS')
+    
+    console.log('📊 Progress update:', {
+      progress,
+      status,
+      uniqueAudios: uniqueAudiosPlayedRef.current.size,
+      audioKey,
+    })
+    
+    updateLessonProgress(LESSON_ID, progress, status, currentPracticeScore, safeTimeSpent)
+  }
+
+  // Initial setup: restore refs from stored progress and mark lesson as in progress
   useEffect(() => {
-    const progress = getLessonProgress(LESSON_ID)
-    if (progress.status === 'NOT_STARTED') {
+    if (refsInitializedRef.current) {
+      return
+    }
+
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Mark lesson as IN_PROGRESS if not already completed
+    if (currentProgress?.status === 'NOT_STARTED') {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS')
     }
+    
+    // Restore refs from stored progress (only once)
+    if (currentProgress) {
+      const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig)
+      startTimeRef.current = estimatedStartTime
+      
+      // Only restore baseAudioPlaysRef if progress is significant (>20%)
+      if (currentProgress.progress > 20) {
+        baseAudioPlaysRef.current = Math.min(estimatedAudioPlays, progressConfig.totalAudios)
+      } else {
+        baseAudioPlaysRef.current = 0
+        console.log('🔄 Progress is low (<20%), resetting baseAudioPlaysRef to 0 for accurate tracking')
+      }
+      
+      // Safety check: if baseAudioPlaysRef is already at or near totalAudios, reset it
+      if (baseAudioPlaysRef.current >= progressConfig.totalAudios - 2) {
+        console.warn('⚠️ baseAudioPlaysRef is too high, resetting to 0 to prevent progress jump')
+        baseAudioPlaysRef.current = 0
+      }
+      
+      // Restore unique audios played from stored progress (if available)
+      // Note: We can't fully restore the Set, but we can estimate based on progress
+      if (currentProgress.progress > 20 && estimatedAudioPlays > 0) {
+        // Estimate unique audios based on progress
+        const estimatedUniqueAudios = Math.floor((currentProgress.progress / 100) * progressConfig.totalAudios * 0.3)
+        console.log('🔄 Restoring estimated unique audios:', estimatedUniqueAudios)
+      }
+    }
+    
+    refsInitializedRef.current = true
   }, [getLessonProgress, updateLessonProgress])
-
-  const calculateProgress = (practiceScore?: number) => {
-    const timeSpent = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60) // minutes
-    // Audio clicks: max 30% (10 clicks = 30%)
-    const audioProgress = Math.min(30, audioPlaysRef.current * 3)
-    // Time spent: max 20% (4 minutes = 20%)
-    const timeProgress = Math.min(20, timeSpent * 5)
-    // Practice score: max 50% (if practice exists)
-    const practiceProgress = practiceScore !== undefined ? Math.min(50, practiceScore * 0.5) : 0
-    return Math.min(100, audioProgress + timeProgress + practiceProgress)
-  }
-
-  const handleAudioPlay = () => {
-    audioPlaysRef.current += 1
-    const currentProgress = getLessonProgress(LESSON_ID)
-    const practiceScore = currentProgress.score !== undefined ? (currentProgress.score / 100) * 100 : undefined
-    const progress = calculateProgress(practiceScore)
-    updateLessonProgress(LESSON_ID, progress, 'IN_PROGRESS')
-  }
 
   const handleAnswerSelect = (index: number) => {
     if (showFeedback || isCompleted) return
@@ -297,19 +408,96 @@ export default function SimpleFuturePage() {
       setShowFeedback(false)
     } else {
       // Calculate practice score percentage
-      const practiceScorePercent = (score.correct / score.total) * 100
-      const isPracticePassed = practiceScorePercent >= 80
+      const practiceScorePercent = Math.round((score.correct / score.total) * 100)
+      const isPracticePassed = practiceScorePercent >= 70 // Match pattern: >= 70 for completion
       
-      setIsCompleted(isPracticePassed)
+      // Always show completion screen when practice is finished, regardless of score
+      setIsCompleted(true)
+      setPracticeScore(practiceScorePercent)
+      setPracticePassed(isPracticePassed)
       
-      // Calculate combined progress
+      // Calculate total time spent (base + session)
+      const currentProgress = getLessonProgress(LESSON_ID)
+      const baseTimeSpent = currentProgress?.timeSpent || 0
+      const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+      const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+      const safeTimeSpent = Math.min(1000, totalTimeSpent)
+      
+      // Calculate combined progress (will force to 100% if score >= 70)
       const progress = calculateProgress(practiceScorePercent)
       
-      // Only mark lesson as completed if practice is passed
+      // Mark lesson as completed if practice is passed (score >= 70)
       const status = isPracticePassed ? 'COMPLETED' : 'IN_PROGRESS'
-      updateLessonProgress(LESSON_ID, progress, status, practiceScorePercent)
+      
+      console.log('🎯 Practice completed:', {
+        practiceScorePercent,
+        isPracticePassed,
+        progress,
+        status,
+      })
+      
+      updateLessonProgress(LESSON_ID, progress, status, practiceScorePercent, safeTimeSpent)
     }
   }
+  
+  // Check if practice was already completed (score exists) but progress doesn't reflect it
+  useEffect(() => {
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Case 1: Practice score exists and >= 70, but progress is not 100% - FORCE to 100%
+    if (currentProgress?.score !== undefined && currentProgress.score >= 70 && currentProgress.progress < 100) {
+      console.log('🔍 Practice score >= 70 but progress is not 100%, forcing to 100%...', {
+        storedProgress: currentProgress.progress,
+        storedScore: currentProgress.score,
+      })
+      
+      // Force progress to 100% when practice is completed (score >= 70)
+      const shouldBeCompleted = currentProgress.score >= 70
+      const newStatus = shouldBeCompleted ? 'COMPLETED' : currentProgress.status
+      
+      console.log('🔄 Forcing progress to 100% because practice score >= 70:', {
+        newProgress: 100,
+        newStatus,
+        storedScore: currentProgress.score,
+        oldProgress: currentProgress.progress,
+      })
+      
+      // Always update to 100% if score >= 70
+      updateLessonProgress(LESSON_ID, 100, newStatus, currentProgress.score, currentProgress.timeSpent)
+    }
+  }, [getLessonProgress, updateLessonProgress])
+  
+  // Listen for progress updates (including from backend sync) and fix if needed
+  useEffect(() => {
+    const handleProgressUpdate = () => {
+      const currentProgress = getLessonProgress(LESSON_ID)
+      // If practice score >= 70 but progress is not 100%, force it to 100%
+      if (currentProgress?.score !== undefined && currentProgress.score >= 70 && currentProgress.progress < 100) {
+        console.log('🔧 Progress update detected - fixing progress to 100% (score >= 70)')
+        updateLessonProgress(LESSON_ID, 100, 'COMPLETED', currentProgress.score, currentProgress.timeSpent)
+      }
+    }
+    
+    window.addEventListener('lessonProgressUpdated', handleProgressUpdate)
+    return () => window.removeEventListener('lessonProgressUpdated', handleProgressUpdate)
+  }, [getLessonProgress, updateLessonProgress])
+  
+  // Check on page visibility change (when user comes back to tab)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const currentProgress = getLessonProgress(LESSON_ID)
+        // If practice score >= 70 but progress is not 100%, force it to 100%
+        if (currentProgress?.score !== undefined && currentProgress.score >= 70 && currentProgress.progress < 100) {
+          console.log('👁️ Page visible - fixing progress to 100% (score >= 70)')
+          updateLessonProgress(LESSON_ID, 100, 'COMPLETED', currentProgress.score, currentProgress.timeSpent)
+        }
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [getLessonProgress, updateLessonProgress])
 
   const handleRestart = () => {
     setCurrentExercise(0)
@@ -337,22 +525,14 @@ export default function SimpleFuturePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
-      <div className="container mx-auto px-4 py-6">
-        <div className="mb-6">
-          <Link href="/learn" className="text-kurdish-red font-bold flex items-center gap-2 mb-4">
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </Link>
-          <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center">
-            Simple Future Tense
-          </h1>
-          <p className="text-gray-700 mt-4 text-center max-w-2xl mx-auto">
-            Learn how to talk about things that will happen. Perfect for beginners!
-          </p>
-        </div>
+      <PageContainer>
+        <BackLink />
+        <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center mb-6">
+          Simple Future Tense
+        </h1>
 
         {/* Mode Toggle */}
-        <div className="flex justify-center gap-2 mb-6">
+        <div className="flex justify-center gap-2 mb-8">
           <button
             onClick={() => setMode('learn')}
             className={`px-6 py-2 rounded-lg font-semibold transition-all ${
@@ -525,7 +705,7 @@ export default function SimpleFuturePage() {
                         audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(verb.infinitive)}.mp3`}
                         label=""
                         size="small"
-                        onPlay={handleAudioPlay}
+                        onPlay={(audioKey) => handleAudioPlay(audioKey || `verb-infinitive-${index}-${verb.infinitive}`)}
                       />
                     </div>
                     <div className="space-y-2">
@@ -538,9 +718,10 @@ export default function SimpleFuturePage() {
                           audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Ez ê ${verb.ez}`)}.mp3`}
                           label=""
                           size="small"
-                          onPlay={handleAudioPlay}
+                          onPlay={(audioKey) => handleAudioPlay(audioKey || `verb-${index}-ez-${verb.ez}`)}
                         />
                       </div>
+                      <div className="h-px bg-gray-200 my-1.5"></div>
                       <div className="flex items-center gap-2">
                         <span className="text-gray-600 font-semibold w-12 text-sm">Tu:</span>
                         <span className="font-mono text-kurdish-red flex-1">Tu ê {verb.tu}</span>
@@ -550,9 +731,10 @@ export default function SimpleFuturePage() {
                           audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Tu ê ${verb.tu}`)}.mp3`}
                           label=""
                           size="small"
-                          onPlay={handleAudioPlay}
+                          onPlay={(audioKey) => handleAudioPlay(audioKey || `verb-${index}-tu-${verb.tu}`)}
                         />
                       </div>
+                      <div className="h-px bg-gray-200 my-1.5"></div>
                       <div className="flex items-center gap-2">
                         <span className="text-gray-600 font-semibold w-12 text-sm">Ew:</span>
                         <span className="font-mono text-kurdish-red flex-1">Ew ê {verb.ew}</span>
@@ -562,9 +744,10 @@ export default function SimpleFuturePage() {
                           audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Ew ê ${verb.ew}`)}.mp3`}
                           label=""
                           size="small"
-                          onPlay={handleAudioPlay}
+                          onPlay={(audioKey) => handleAudioPlay(audioKey || `verb-${index}-ew-${verb.ew}`)}
                         />
                       </div>
+                      <div className="h-px bg-gray-200 my-1.5"></div>
                       <div className="flex items-center gap-2">
                         <span className="text-gray-600 font-semibold w-12 text-sm">Em:</span>
                         <span className="font-mono text-kurdish-red flex-1">Em ê {verb.em}</span>
@@ -574,9 +757,10 @@ export default function SimpleFuturePage() {
                           audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Em ê ${verb.em}`)}.mp3`}
                           label=""
                           size="small"
-                          onPlay={handleAudioPlay}
+                          onPlay={(audioKey) => handleAudioPlay(audioKey || `verb-${index}-em-${verb.em}`)}
                         />
                       </div>
+                      <div className="h-px bg-gray-200 my-1.5"></div>
                       <div className="flex items-center gap-2">
                         <span className="text-gray-600 font-semibold w-12 text-sm">Hûn:</span>
                         <span className="font-mono text-kurdish-red flex-1">Hûn ê {verb.hun}</span>
@@ -586,9 +770,10 @@ export default function SimpleFuturePage() {
                           audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Hûn ê ${verb.hun}`)}.mp3`}
                           label=""
                           size="small"
-                          onPlay={handleAudioPlay}
+                          onPlay={(audioKey) => handleAudioPlay(audioKey || `verb-${index}-hun-${verb.hun}`)}
                         />
                       </div>
+                      <div className="h-px bg-gray-200 my-1.5"></div>
                       <div className="flex items-center gap-2">
                         <span className="text-gray-600 font-semibold w-12 text-sm">Ewan:</span>
                         <span className="font-mono text-kurdish-red flex-1">Ewan ê {verb.ewan}</span>
@@ -598,7 +783,7 @@ export default function SimpleFuturePage() {
                           audioFile={`/audio/kurdish-tts-mp3/grammar/${getAudioFilename(`Ewan ê ${verb.ewan}`)}.mp3`}
                           label=""
                           size="small"
-                          onPlay={handleAudioPlay}
+                          onPlay={(audioKey) => handleAudioPlay(audioKey || `verb-${index}-ewan-${verb.ewan}`)}
                         />
                       </div>
                     </div>
@@ -660,22 +845,19 @@ export default function SimpleFuturePage() {
                         transition={{ delay: sectionIndex * 0.1 + exampleIndex * 0.05 }}
                         className="p-4 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-100"
                       >
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-start justify-between gap-3">
                           <div className="flex-1">
-                            <div className="flex items-center gap-4 mb-2">
-                              <div className="text-kurdish-red font-medium text-lg">{example.ku}</div>
-                              <div className="text-gray-400 text-xl">|</div>
-                              <div className="text-gray-600 text-lg">{example.en}</div>
-                            </div>
+                            <div className="font-bold text-kurdish-red mb-1">{example.ku}</div>
+                            <div className="text-sm text-gray-600">{example.en}</div>
                           </div>
                           {example.audio && (
                             <AudioButton
                               kurdishText={example.audioText || example.ku}
                               phoneticText={example.en}
                               audioFile={example.audioFile}
-                              label="Play"
+                              label="Listen"
                               size="small"
-                              onPlay={handleAudioPlay}
+                              onPlay={(audioKey) => handleAudioPlay(audioKey || `example-${sectionIndex}-${exampleIndex}-${example.ku}`)}
                             />
                           )}
                         </div>
@@ -781,29 +963,68 @@ export default function SimpleFuturePage() {
                 animate={{ opacity: 1, scale: 1 }}
                 className="card p-8 text-center"
               >
-                <div className="text-6xl mb-4">🎉</div>
-                <h2 className="text-2xl font-bold text-gray-800 mb-4">Practice Complete!</h2>
-                <p className="text-lg text-gray-600 mb-6">
-                  You got <span className="font-bold text-kurdish-red">{score.correct}</span> out of{' '}
-                  <span className="font-bold">{score.total}</span> correct!
-                </p>
-                <div className="mb-6">
-                  <div className="text-3xl font-bold text-kurdish-red">
-                    {Math.round((score.correct / score.total) * 100)}%
-                  </div>
-                </div>
-                <button
-                  onClick={handleRestart}
-                  className="bg-gradient-to-r from-primaryBlue to-supportLavender text-white font-semibold py-3 px-8 rounded-lg hover:shadow-lg transition-all flex items-center gap-2 mx-auto"
-                >
-                  <RotateCcw className="w-5 h-5" />
-                  Try Again
-                </button>
+                {practicePassed ? (
+                  <>
+                    <div className="text-6xl mb-4">🎉</div>
+                    <h2 className="text-2xl font-bold text-gray-800 mb-4">Practice Complete!</h2>
+                    <p className="text-lg text-gray-600 mb-6">
+                      You got <span className="font-bold text-kurdish-red">{score.correct}</span> out of{' '}
+                      <span className="font-bold">{score.total}</span> correct!
+                    </p>
+                    <div className="mb-6">
+                      <div className="text-3xl font-bold text-kurdish-red">
+                        {practiceScore}%
+                      </div>
+                    </div>
+                    <div className="flex gap-4 justify-center">
+                      <Link
+                        href="/learn"
+                        className="bg-gradient-to-r from-primaryBlue to-supportLavender text-white font-semibold py-3 px-8 rounded-lg hover:shadow-lg transition-all"
+                      >
+                        Back to Learn
+                      </Link>
+                      <button
+                        onClick={handleRestart}
+                        className="bg-gray-200 text-gray-700 font-semibold py-3 px-8 rounded-lg hover:bg-gray-300 transition-all flex items-center gap-2"
+                      >
+                        <RotateCcw className="w-5 h-5" />
+                        Try Again
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-6xl mb-4">📚</div>
+                    <h2 className="text-2xl font-bold text-gray-800 mb-4">Practice Complete!</h2>
+                    <p className="text-lg text-gray-600 mb-6">
+                      You got <span className="font-bold text-kurdish-red">{score.correct}</span> out of{' '}
+                      <span className="font-bold">{score.total}</span> correct ({practiceScore}%).
+                    </p>
+                    <p className="text-sm text-gray-500 mb-6">
+                      You need at least 70% to pass. Keep practicing!
+                    </p>
+                    <div className="flex gap-4 justify-center">
+                      <Link
+                        href="/learn"
+                        className="bg-gradient-to-r from-primaryBlue to-supportLavender text-white font-semibold py-3 px-8 rounded-lg hover:shadow-lg transition-all"
+                      >
+                        Back to Learn
+                      </Link>
+                      <button
+                        onClick={handleRestart}
+                        className="bg-gray-200 text-gray-700 font-semibold py-3 px-8 rounded-lg hover:bg-gray-300 transition-all flex items-center gap-2"
+                      >
+                        <RotateCcw className="w-5 h-5" />
+                        Try Again
+                      </button>
+                    </div>
+                  </>
+                )}
               </motion.div>
             )}
           </div>
         )}
-      </div>
+      </PageContainer>
     </div>
   )
 }

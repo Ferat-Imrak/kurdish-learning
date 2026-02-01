@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,14 +6,21 @@ import {
   ScrollView,
   Pressable,
   Dimensions,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+
+const SKY = '#EAF3FF';
+const SKY_DEEPER = '#d6e8ff';
+const TEXT_PRIMARY = '#0F172A';
 import { Audio } from 'expo-av';
 import { Asset } from 'expo-asset';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
+import { restoreRefsFromProgress } from '../../lib/utils/progressHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -110,11 +117,11 @@ const naturePhrases: NaturePhrase[] = [
 ];
 
 const categories = {
-  trees: { label: 'Trees', color: '#10b981' },
-  flowers: { label: 'Flowers', color: '#ec4899' },
-  landscapes: { label: 'Landscapes', color: '#3b82f6' },
-  weather: { label: 'Weather', color: '#f59e0b' },
-  plants: { label: 'Plants', color: '#14b8a6' },
+  trees: { label: 'Trees', color: '#10b981', icon: '🌳' },
+  flowers: { label: 'Flowers', color: '#ec4899', icon: '🌸' },
+  landscapes: { label: 'Landscapes', color: '#3b82f6', icon: '🏔️' },
+  weather: { label: 'Weather', color: '#f59e0b', icon: '☀️' },
+  plants: { label: 'Plants', color: '#14b8a6', icon: '🌿' },
 };
 
 // Audio assets mapping
@@ -174,8 +181,26 @@ export default function NaturePage() {
   const [showAllItems, setShowAllItems] = useState(false);
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const startTimeRef = useRef<number>(Date.now());
-  const audioPlaysRef = useRef<number>(0);
+  
+  // Progress configuration (no practice section, 50% audio + 50% time)
+  const progressConfig = {
+    totalAudios: natureItems.length + naturePhrases.length, // 34 + 10 = 44
+    hasPractice: false,
+    audioWeight: 50,
+    timeWeight: 50,
+    audioMultiplier: 2.5, // 50% / 20 audios ≈ 2.5% per audio (capped at 50%)
+    timeMultiplier: 10, // 50% / 5 minutes = 10% per minute
+  };
+  
+  // Initialize refs - will be restored in useEffect
+  const storedProgress = getLessonProgress(LESSON_ID);
+  const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
+  const startTimeRef = useRef<number>(estimatedStartTime);
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
+  // Base audio plays estimated from stored progress
+  const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
+  // Track previous unique audio count to calculate increment
+  const previousUniqueAudiosCountRef = useRef<number>(0);
 
   // Initialize audio mode
   useEffect(() => {
@@ -203,6 +228,14 @@ export default function NaturePage() {
     if (progress.status === 'NOT_STARTED') {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS');
     }
+    
+    // Restore refs from stored progress (in case progress was updated after component mount)
+    const currentProgress = getLessonProgress(LESSON_ID);
+    const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig);
+    startTimeRef.current = estimatedStartTime;
+    baseAudioPlaysRef.current = estimatedAudioPlays;
+    
+    // Note: uniqueAudiosPlayedRef starts fresh each session, but we account for base progress
   }, [isAuthenticated]);
 
   const playAudio = async (audioKey: string, kurdishText: string) => {
@@ -236,9 +269,11 @@ export default function NaturePage() {
         }
       });
 
-      // Track audio play for progress
-      audioPlaysRef.current += 1;
-      handleAudioPlay();
+      // Track unique audios played
+      if (!uniqueAudiosPlayedRef.current.has(audioKey)) {
+        uniqueAudiosPlayedRef.current.add(audioKey);
+        handleAudioPlay();
+      }
     } catch (error) {
       console.error('Error playing audio:', error);
       setPlayingAudio(null);
@@ -247,121 +282,157 @@ export default function NaturePage() {
 
   const handleAudioPlay = () => {
     const currentProgress = getLessonProgress(LESSON_ID);
-    const progress = calculateProgress();
+    const { progress, timeSpent } = calculateProgress();
     const status = currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS';
-    updateLessonProgress(LESSON_ID, progress, status);
+    updateLessonProgress(LESSON_ID, progress, status, undefined, timeSpent);
   };
 
   const calculateProgress = () => {
-    const timeSpent = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60); // minutes
-    // Audio clicks: max 50% (20 clicks = 50%)
-    const audioProgress = Math.min(50, audioPlaysRef.current * 2.5);
-    // Time spent: max 50% (5 minutes = 50%)
-    const timeProgress = Math.min(50, timeSpent * 10);
-    return Math.min(100, audioProgress + timeProgress);
+    const currentProgress = getLessonProgress(LESSON_ID);
+    const baseProgress = currentProgress.progress || 0;
+    const baseTimeSpent = currentProgress.timeSpent || 0;
+    
+    // Calculate session time (minutes)
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes;
+    
+    // Safeguard: if baseTimeSpent is unreasonably large, reset to 0
+    const safeBaseTimeSpent = baseTimeSpent > 10000 ? 0 : baseTimeSpent;
+    const safeTotalTimeSpent = safeBaseTimeSpent + sessionTimeMinutes;
+    
+    // Calculate new unique audios played since last update
+    const currentUniqueAudiosCount = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size;
+    const newUniqueAudios = currentUniqueAudiosCount - previousUniqueAudiosCountRef.current;
+    
+    // Calculate new progress from current session activity
+    // Audio progress: max 50% (cap at 50% total for audio+time)
+    const maxAudioTimeProgress = 100; // 50% audio + 50% time = 100% max (no practice)
+    const currentAudioTimeProgress = Math.min(maxAudioTimeProgress, 
+      Math.min(50, currentUniqueAudiosCount * progressConfig.audioMultiplier) +
+      Math.min(50, safeTotalTimeSpent * progressConfig.timeMultiplier)
+    );
+    
+    // Only add new progress if there's room below the cap
+    const baseAudioTimeProgress = Math.min(maxAudioTimeProgress,
+      Math.min(50, baseAudioPlaysRef.current * progressConfig.audioMultiplier) +
+      Math.min(50, safeBaseTimeSpent * progressConfig.timeMultiplier)
+    );
+    
+    const newAudioTimeProgress = Math.max(0, currentAudioTimeProgress - baseAudioTimeProgress);
+    
+    // Total progress = base + new session activity (capped at 100% since no practice)
+    const totalProgress = Math.min(100, baseProgress + newAudioTimeProgress);
+    
+    // Update previous count for next calculation
+    previousUniqueAudiosCountRef.current = currentUniqueAudiosCount;
+    
+    return {
+      progress: totalProgress,
+      timeSpent: safeTotalTimeSpent,
+    };
   };
 
-  const filteredItems = selectedCategory === 'all'
-    ? natureItems
-    : natureItems.filter(item => item.category === selectedCategory);
+  const filteredItems = useMemo(() => {
+    return selectedCategory === 'all'
+      ? natureItems
+      : natureItems.filter(item => item.category === selectedCategory);
+  }, [selectedCategory]);
 
   const displayedItems = showAllItems ? filteredItems : filteredItems.slice(0, 12);
 
   // Calculate total examples count for Learn progress
   const totalExamples = natureItems.length + naturePhrases.length;
-  const learnedCount = Math.min(audioPlaysRef.current, totalExamples);
+  // Show accumulated unique audios (base + new in this session)
+  const learnedCount = Math.min(baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size, totalExamples);
 
   const progress = getLessonProgress(LESSON_ID);
 
-  return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Ionicons name="arrow-back" size={24} color="#3A86FF" />
-        </Pressable>
-        <Text style={styles.headerTitle}>Nature</Text>
-        <View style={styles.headerRight} />
-      </View>
+  // Category chips data with "All" first
+  const categoryChips = useMemo(() => {
+    return [
+      { id: 'all', label: 'All', icon: null as string | null },
+      ...Object.entries(categories).map(([id, cat]) => ({
+        id,
+        label: cat.label,
+        icon: cat.icon,
+      })),
+    ];
+  }, []);
 
-      {/* Progress Info */}
-      <View style={styles.progressInfoContainer}>
-        <Text style={styles.progressInfoText}>
-          <Text style={styles.progressInfoLabel}>Progress: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            progress.progress === 100 && styles.progressInfoComplete
-          ]}>
-            {Math.round(progress.progress)}%
-          </Text>
-          <Text style={styles.progressInfoSeparator}> • </Text>
-          <Text style={styles.progressInfoLabel}>Learn: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            learnedCount === totalExamples && styles.progressInfoComplete
-          ]}>
-            {learnedCount}/{totalExamples}
-          </Text>
+  // Render category chip
+  const renderCategoryChip = useCallback(({ item }: { item: { id: string; label: string; icon: string | null } }) => {
+    const isActive = selectedCategory === item.id;
+    const hasIcon = item.icon;
+
+    return (
+      <Pressable
+        onPress={() => {
+          setSelectedCategory(item.id);
+          setShowAllItems(false);
+        }}
+        style={({ pressed }) => [
+          styles.categoryChip,
+          isActive && styles.categoryChipActive,
+          pressed && styles.chipPressed,
+        ]}
+      >
+        {hasIcon && <Text style={styles.categoryChipIcon}>{item.icon}</Text>}
+        <Text style={[
+          styles.categoryChipText,
+          isActive && styles.categoryChipTextActive,
+        ]}>
+          {item.label}
         </Text>
-      </View>
+      </Pressable>
+    );
+  }, [selectedCategory]);
+
+  const categoryKeyExtractor = useCallback((item: { id: string; label: string; icon: string | null }) => item.id, []);
+
+  return (
+    <View style={styles.pageWrap}>
+      <LinearGradient colors={[SKY, SKY_DEEPER, SKY]} style={StyleSheet.absoluteFill} />
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} style={styles.backHit} hitSlop={8}>
+            <Ionicons name="chevron-back" size={24} color={TEXT_PRIMARY} />
+          </Pressable>
+          <Text style={styles.headerTitle}>Nature</Text>
+          <View style={styles.headerRight} />
+        </View>
+
+        <View style={styles.progressBarCard}>
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Progress</Text>
+            <Text style={[styles.progressBarValue, progress.progress === 100 && styles.progressBarComplete]}>
+              {Math.round(progress.progress)}%
+            </Text>
+          </View>
+          <View style={styles.progressBarDivider} />
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Learn</Text>
+            <Text style={[styles.progressBarValue, learnedCount === totalExamples && styles.progressBarComplete]}>
+              {learnedCount}/{totalExamples}
+            </Text>
+          </View>
+        </View>
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Category Filter */}
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionIcon}>🌿</Text>
-            <Text style={styles.sectionTitle}>Nature Categories</Text>
-          </View>
-          <View style={styles.categoryContainer}>
-            <Pressable
-              onPress={() => {
-                setSelectedCategory('all');
-                setShowAllItems(false);
-              }}
-              style={({ pressed }) => [
-                styles.categoryButton,
-                selectedCategory === 'all' && styles.categoryButtonActive,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={[
-                styles.categoryButtonText,
-                selectedCategory === 'all' && styles.categoryButtonTextActive,
-              ]}>
-                All
-              </Text>
-            </Pressable>
-            {Object.entries(categories).map(([key, category]) => (
-              <Pressable
-                key={key}
-                onPress={() => {
-                  setSelectedCategory(key);
-                  setShowAllItems(false);
-                }}
-                style={({ pressed }) => [
-                  styles.categoryButton,
-                  selectedCategory === key && styles.categoryButtonActive,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={[
-                  styles.categoryButtonText,
-                  selectedCategory === key && styles.categoryButtonTextActive,
-                ]}>
-                  {category.label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+        {/* Category Filter - Compact Horizontal Chips */}
+        <View style={styles.categorySection}>
+          <FlatList
+            data={categoryChips}
+            renderItem={renderCategoryChip}
+            keyExtractor={categoryKeyExtractor}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryChipsContainer}
+            ItemSeparatorComponent={() => <View style={{ width: 8 }} />}
+          />
         </View>
 
         {/* Nature Items */}
@@ -481,61 +552,73 @@ export default function NaturePage() {
           </View>
         </View>
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
+  pageWrap: { flex: 1 },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 8,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    minHeight: 44,
   },
-  backButton: {
-    padding: 4,
-  },
-  pressed: {
-    opacity: 0.6,
+  backHit: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '700',
-    color: '#111827',
-    flex: 1,
-    textAlign: 'center',
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.5,
   },
-  headerRight: {
-    width: 32,
-  },
-  progressInfoContainer: {
+  headerRight: { width: 44 },
+  progressBarCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
     marginHorizontal: 20,
-    marginTop: 12,
-    marginBottom: 12,
+    marginTop: 6,
+    marginBottom: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  progressInfoText: {
-    fontSize: 14,
-    color: '#6b7280',
+  progressBarSection: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  progressInfoLabel: {
+  progressBarLabel: {
+    fontSize: 11,
     fontWeight: '500',
+    color: '#6b7280',
+    marginBottom: 1,
   },
-  progressInfoValue: {
+  progressBarValue: {
+    fontSize: 15,
     fontWeight: '700',
     color: '#111827',
   },
-  progressInfoComplete: {
-    color: '#10b981',
-  },
-  progressInfoSeparator: {
-    marginHorizontal: 4,
+  progressBarComplete: { color: '#10b981' },
+  progressBarDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#e5e7eb',
   },
   scrollView: {
     flex: 1,
@@ -579,30 +662,42 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     marginBottom: 12,
   },
-  categoryContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  // Category Section - Compact Horizontal (Matching Daily Conversations)
+  categorySection: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
   },
-  categoryButton: {
+  categoryChipsContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 4,
+  },
+  categoryChip: {
+    height: 38,
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: 19,
     backgroundColor: '#f3f4f6',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
-  categoryButtonActive: {
+  categoryChipActive: {
     backgroundColor: '#3A86FF',
-    borderColor: '#3A86FF',
   },
-  categoryButtonText: {
+  categoryChipIcon: {
+    fontSize: 16,
+  },
+  categoryChipText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#4b5563',
   },
-  categoryButtonTextActive: {
+  categoryChipTextActive: {
     color: '#ffffff',
+  },
+  chipPressed: {
+    opacity: 0.7,
   },
   natureGrid: {
     flexDirection: 'row',

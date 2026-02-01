@@ -17,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { login as loginService } from '../../lib/services/auth';
+import { checkConnection, API_URL } from '../../lib/services/api';
 import { useAuthStore } from '../../lib/store/authStore';
 
 export default function LoginScreen() {
@@ -68,25 +69,66 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     setErrors({});
-    
+
+    const connection = await checkConnection();
+    if (!connection.ok) {
+      setIsLoading(false);
+      const base = API_URL.replace(/\/api\/?$/, '');
+      Alert.alert(
+        'Cannot reach server',
+        `App is trying: ${API_URL}\n\n` +
+        '1. Backend running? In backend folder: npm run dev\n' +
+        '2. Use the URL from backend log ("Mobile access: http://...") in mobile/.env as EXPO_PUBLIC_API_URL, then restart Expo.\n' +
+        '3. Same WiFi for phone and computer.\n' +
+        '4. macOS: System Settings → Network → Firewall → allow Node/tsx incoming.\n\n' +
+        `Test in phone browser: ${base}/api/health`,
+        [
+          { text: 'Try anyway', onPress: () => handleLoginSkipCheck() },
+          { text: 'OK' },
+        ]
+      );
+      return;
+    }
+
+    await doLogin();
+  };
+
+  const doLogin = async () => {
     try {
+      console.log('🔐 Mobile: Attempting login with:', formData.usernameOrEmail);
       const response = await loginService({
         usernameOrEmail: formData.usernameOrEmail,
         password: formData.password,
       });
-      
+
+      console.log('🔐 Mobile: Login response:', {
+        success: response.success,
+        hasUser: !!response.user,
+        hasToken: !!response.token,
+        error: response.error,
+      });
+
       if (response.success && response.user && response.token) {
+        console.log('🔐 Mobile: Calling authStore.login with user:', response.user.email);
         await login(response.user, response.token);
-        // No navigation - tabs layout will handle redirect
+        console.log('🔐 Mobile: Login successful, user authenticated');
+        router.replace('/(tabs)/');
       } else {
         const errorMessage = response.error || 'Invalid credentials';
+        console.log('🔐 Mobile: Login failed:', errorMessage);
         Alert.alert('Login Failed', errorMessage);
       }
     } catch (error: any) {
+      console.error('🔐 Mobile: Login error:', error);
       Alert.alert('Error', error.message || 'Something went wrong');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleLoginSkipCheck = () => {
+    setIsLoading(true);
+    doLogin();
   };
 
   return (

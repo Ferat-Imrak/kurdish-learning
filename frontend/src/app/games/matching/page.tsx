@@ -1,6 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { ArrowLeft } from "lucide-react"
+import BackLink from "../../../components/BackLink"
+import { useGamesProgress } from "../../../contexts/GamesProgressContext"
 
 type Item = { id: string; left: string; right: string }
 
@@ -522,21 +525,21 @@ function shuffle<T>(arr: T[]): T[] {
   return a
 }
 
-// Helper functions for progress tracking
-const getMatchingProgress = (categoryId: string): number => {
-  if (typeof window === 'undefined') return 0
-  const stored = localStorage.getItem(`matching-progress-${categoryId}`)
-  return stored ? JSON.parse(stored) : 0
-}
-
-const saveMatchingProgress = (categoryId: string, roundsCompleted: number) => {
-  if (typeof window === 'undefined') return
-  const existing = localStorage.getItem(`matching-progress-${categoryId}`)
-  const bestRounds = existing ? Math.max(JSON.parse(existing), roundsCompleted) : roundsCompleted
-  localStorage.setItem(`matching-progress-${categoryId}`, JSON.stringify(bestRounds))
-}
+const MATCHING_KEY = (id: string) => `matching-progress-${id}`
 
 export default function MatchingPage() {
+  const { getProgress: getGamesProgress, saveProgress: saveGamesProgress } = useGamesProgress()
+
+  const getMatchingProgress = (categoryId: string): number => {
+    const raw = getGamesProgress(MATCHING_KEY(categoryId))
+    return typeof raw === 'number' ? raw : 0
+  }
+
+  const saveMatchingProgress = (categoryId: string, roundsCompleted: number) => {
+    const existing = getMatchingProgress(categoryId)
+    const bestRounds = Math.max(existing, roundsCompleted)
+    saveGamesProgress(MATCHING_KEY(categoryId), bestRounds)
+  }
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [deckIndex, setDeckIndex] = useState(0)
   const [leftList, setLeftList] = useState<Item[]>([])
@@ -589,7 +592,18 @@ export default function MatchingPage() {
     }
   }
 
+  // Sync browser history with category vs in-game view so browser back works correctly
+  useEffect(() => {
+    const onPopState = () => {
+      setSelectedCategory(null)
+      setDeckIndex(0)
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
   const handleCategorySelect = (categoryId: string) => {
+    window.history.pushState({ view: 'game', category: categoryId }, '', window.location.pathname)
     setSelectedCategory(categoryId)
     setDeckIndex(0)
   }
@@ -598,48 +612,51 @@ export default function MatchingPage() {
   if (!selectedCategory) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
-        <div className="container mx-auto px-4 py-6">
-          <div className="mb-6">
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-kurdish-red text-center">Matching Game</h1>
+        <div className="container mx-auto px-4 py-6 md:max-w-[1320px]">
+          <BackLink href="/games" label="Back to Games" />
+          <div className="mb-6 md:mb-8">
+            <h1 className="text-xl sm:text-2xl md:text-4xl lg:text-5xl font-bold text-kurdish-red text-center">Matching Game</h1>
           </div>
 
-          <div className="max-w-4xl mx-auto">
-            <p className="text-center text-sm sm:text-base md:text-lg text-gray-700 mb-8">
+          <div className="max-w-4xl mx-auto md:max-w-none">
+            <p className="text-center text-sm sm:text-base text-lg text-gray-700 mb-8 md:text-base md:text-gray-500 md:mb-6">
               Choose a category to start matching Kurdish words with pictures!
             </p>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6 md:max-w-[1320px] md:mx-auto">
               {categories.map((category) => {
                 const roundsCompleted = getMatchingProgress(category.id)
                 const isCompleted = roundsCompleted >= 10
                 const progressPercentage = Math.min(100, Math.round((roundsCompleted / 10) * 100))
+                const showPercent = progressPercentage > 0 || isCompleted
                 
                 return (
                   <button
                     key={category.id}
                     onClick={() => handleCategorySelect(category.id)}
-                    className="card p-6 hover:shadow-lg transition-all hover:scale-105 text-center"
+                    className="card p-6 hover:shadow-lg transition-all hover:scale-105 text-center md:p-5 md:rounded-2xl md:flex md:flex-col md:h-full md:items-stretch md:text-left md:hover:shadow-xl md:hover:-translate-y-0.5 md:hover:ring-2 md:hover:ring-primaryBlue/30 md:focus-visible:outline md:focus-visible:ring-2 md:focus-visible:ring-primaryBlue md:focus-visible:ring-offset-2 cursor-pointer"
                   >
-                    <div className="text-4xl mb-3">{category.icon}</div>
-                    <div className="font-semibold text-gray-800">{category.name}</div>
-                    <div className="text-sm text-gray-500 mt-1">
-                      {categoryPools[category.id]?.length || 0} words
+                    <div className="text-4xl mb-3 md:mb-4 md:flex md:justify-center">
+                      <span className="md:w-11 md:h-11 md:rounded-2xl md:bg-primaryBlue/5 md:flex md:items-center md:justify-center md:inline-flex md:text-2xl">
+                        {category.icon}
+                      </span>
                     </div>
-                    <div className="mt-2">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-xs font-medium text-gray-700">Progress</span>
-                        <span className={`text-xs font-semibold ${
-                          isCompleted ? 'text-green-600' : 'text-gray-500'
-                        }`}>
+                    <div className="font-semibold text-gray-800 md:text-lg md:font-semibold md:mb-1">{category.name}</div>
+                    <div className="text-sm text-gray-500 mt-1 md:text-sm md:text-gray-500">
+                      10 rounds
+                    </div>
+                    <div className="mt-2 md:mt-4 md:flex-1 md:flex md:flex-col md:justify-end">
+                      {showPercent && (
+                        <span className={`text-xs font-semibold block mb-1 md:text-xs md:text-gray-500 ${isCompleted ? 'text-green-600' : ''}`}>
                           {isCompleted ? 'Completed' : `${progressPercentage}%`}
                         </span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-1.5">
+                      )}
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 md:h-2 md:bg-gray-100">
                         <div 
-                          className={`h-1.5 rounded-full transition-all duration-300 ${
+                          className={`h-1.5 md:h-2 rounded-full transition-all duration-300 ${
                             isCompleted 
                               ? 'bg-green-600' 
-                              : 'bg-gradient-to-r from-primaryBlue to-supportLavender'
+                              : 'bg-primaryBlue'
                           }`}
                           style={{ width: `${isCompleted ? 100 : progressPercentage}%` }}
                         ></div>
@@ -652,34 +669,36 @@ export default function MatchingPage() {
               {/* Master Challenge */}
               {(() => {
                 const roundsCompleted = getMatchingProgress("master")
-                const isCompleted = roundsCompleted >= 50
-                const progressPercentage = Math.min(100, Math.round((roundsCompleted / 50) * 100))
+                const isCompleted = roundsCompleted >= 20
+                const progressPercentage = Math.min(100, Math.round((roundsCompleted / 20) * 100))
+                const showPercent = progressPercentage > 0 || isCompleted
                 
                 return (
                   <button
                     onClick={() => handleCategorySelect("master")}
-                    className="card p-6 hover:shadow-lg transition-all hover:scale-105 text-center"
+                    className="card p-6 hover:shadow-lg transition-all hover:scale-105 text-center md:p-5 md:rounded-2xl md:flex md:flex-col md:h-full md:items-stretch md:text-left md:hover:shadow-xl md:hover:-translate-y-0.5 md:hover:ring-2 md:hover:ring-primaryBlue/30 md:focus-visible:outline md:focus-visible:ring-2 md:focus-visible:ring-primaryBlue md:focus-visible:ring-offset-2 cursor-pointer"
                   >
-                    <div className="text-4xl mb-3">🏆</div>
-                    <div className="font-semibold text-gray-800">Master Challenge</div>
-                    <div className="text-sm text-gray-500 mt-1">
-                      {allItems.length} words
+                    <div className="text-4xl mb-3 md:mb-4 md:flex md:justify-center">
+                      <span className="md:w-11 md:h-11 md:rounded-2xl md:bg-primaryBlue/5 md:flex md:items-center md:justify-center md:inline-flex md:text-2xl">
+                        🏆
+                      </span>
                     </div>
-                    <div className="mt-2">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-xs font-medium text-gray-700">Progress</span>
-                        <span className={`text-xs font-semibold ${
-                          isCompleted ? 'text-green-600' : 'text-gray-500'
-                        }`}>
+                    <div className="font-semibold text-gray-800 md:text-lg md:font-semibold md:mb-1">Master Challenge</div>
+                    <div className="text-sm text-gray-500 mt-1 md:text-sm md:text-gray-500">
+                      20 rounds
+                    </div>
+                    <div className="mt-2 md:mt-4 md:flex-1 md:flex md:flex-col md:justify-end">
+                      {showPercent && (
+                        <span className={`text-xs font-semibold block mb-1 md:text-xs md:text-gray-500 ${isCompleted ? 'text-green-600' : ''}`}>
                           {isCompleted ? 'Completed' : `${progressPercentage}%`}
                         </span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-1.5">
+                      )}
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 md:h-2 md:bg-gray-100">
                         <div 
-                          className={`h-1.5 rounded-full transition-all duration-300 ${
+                          className={`h-1.5 md:h-2 rounded-full transition-all duration-300 ${
                             isCompleted 
                               ? 'bg-green-600' 
-                              : 'bg-gradient-to-r from-primaryBlue to-supportLavender'
+                              : 'bg-primaryBlue'
                           }`}
                           style={{ width: `${isCompleted ? 100 : progressPercentage}%` }}
                         ></div>
@@ -702,6 +721,18 @@ export default function MatchingPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
       <div className="container mx-auto px-4 py-6">
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedCategory(null)
+            setDeckIndex(0)
+            window.history.back()
+          }}
+          className="text-gray-500 text-sm font-medium hover:text-gray-700 transition-colors inline-flex items-center gap-1.5 mb-5"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          Back to Categories
+        </button>
         <div className="mb-6">
           <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-kurdish-red text-center">
             {currentCategory?.icon} {currentCategory?.name}
@@ -709,7 +740,7 @@ export default function MatchingPage() {
         </div>
 
         <div className="max-w-3xl mx-auto mb-4 text-center text-gray-700">
-          Round {deckIndex + 1} / {selectedCategory === "master" ? 50 : 10} {completed ? '• Great job!' : ''}
+          Round {deckIndex + 1} / {selectedCategory === "master" ? 20 : 10} {completed ? '• Great job!' : ''}
         </div>
 
         <div className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">

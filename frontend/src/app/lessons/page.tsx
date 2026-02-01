@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { 
-  BookOpen, Lock, CheckCircle, Play, Star, 
+  BookOpen, Lock, Play, Star, 
   Target, Trophy, ArrowRight, LockKeyhole, Sparkles
 } from 'lucide-react'
 import { useProgress } from '../../contexts/ProgressContext'
@@ -225,11 +225,7 @@ export default function LessonsPage() {
                   >
                     {/* Lesson Number Badge */}
                     <div className="absolute top-4 right-4">
-                      {isCompleted ? (
-                        <div className="w-10 h-10 bg-brand-green rounded-full flex items-center justify-center shadow-lg">
-                          <CheckCircle className="w-6 h-6 text-white" />
-                        </div>
-                      ) : unlocked ? (
+                      {unlocked ? (
                         <div className="w-10 h-10 bg-gradient-to-br from-primaryBlue/20 to-supportLavender/20 rounded-full flex items-center justify-center">
                           <span className="font-bold text-primaryBlue">{lesson.number}</span>
                         </div>
@@ -293,7 +289,7 @@ export default function LessonsPage() {
                         {isCompleted ? (
                           <>
                             <Star className="w-4 h-4" />
-                            <span>Review</span>
+                            <span>Completed</span>
                           </>
                         ) : isInProgress ? (
                           <>

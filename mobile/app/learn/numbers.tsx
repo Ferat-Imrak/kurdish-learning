@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,12 +11,19 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+
+const SKY = '#EAF3FF';
+const SKY_DEEPER = '#d6e8ff';
+const TEXT_PRIMARY = '#0F172A';
 import { Audio } from 'expo-av';
 import { Asset } from 'expo-asset';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
+import { restoreRefsFromProgress } from '../../lib/utils/progressHelper';
 import NumberCard from '../components/NumberCard';
+import ExampleCard from '../components/ExampleCard';
 
 const { width } = Dimensions.get('window');
 
@@ -201,6 +208,26 @@ export default function NumbersPage() {
   const router = useRouter();
   const { isAuthenticated } = useAuthStore();
   const { updateLessonProgress, getLessonProgress } = useProgressStore();
+  
+  // Progress tracking refs - will be restored from stored progress
+  const progressConfig = {
+    totalAudios: 45, // 37 numbers (19 basic + 9 key + 9 compound) + 8 examples
+    hasPractice: true,
+    audioWeight: 30,
+    timeWeight: 20,
+    practiceWeight: 50,
+    audioMultiplier: 0.67, // 30% / 45 audios ≈ 0.67% per audio
+  };
+  
+  // Initialize refs - will be restored in useEffect
+  const storedProgress = getLessonProgress(LESSON_ID);
+  const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
+  const startTimeRef = useRef<number>(estimatedStartTime);
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
+  // Base audio plays estimated from stored progress
+  const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
+  // Track previous unique audio count to calculate increment
+  const previousUniqueAudiosCountRef = useRef<number>(0);
 
   // Mode state
   const [mode, setMode] = useState<'learn' | 'practice'>('learn');
@@ -213,6 +240,8 @@ export default function NumbersPage() {
   const [currentQuestion, setCurrentQuestion] = useState(1);
   const [mathScore, setMathScore] = useState({ correct: 0, total: 0 });
   const [mathQuizCompleted, setMathQuizCompleted] = useState(false);
+  const [mathQuizPassed, setMathQuizPassed] = useState(false);
+  const [mathQuizScore, setMathQuizScore] = useState<number | undefined>(undefined);
 
   // Matching game state
   const [matchingPairs, setMatchingPairs] = useState<Array<{ digit: number; ku: string; matched: boolean }>>([]);
@@ -221,6 +250,9 @@ export default function NumbersPage() {
   const [selectedMatch, setSelectedMatch] = useState<{ type: 'digit' | 'ku'; value: number | string } | null>(null);
   const [matchScore, setMatchScore] = useState({ correct: 0, total: 0 });
   const [incorrectMatches, setIncorrectMatches] = useState<Array<{ type: 'digit' | 'ku'; value: number | string }>>([]);
+  const [matchingGameCompleted, setMatchingGameCompleted] = useState(false);
+  const [matchingGamePassed, setMatchingGamePassed] = useState(false);
+  const [matchingGameScore, setMatchingGameScore] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -228,11 +260,32 @@ export default function NumbersPage() {
       return;
     }
 
-    // Mark lesson as in progress on mount
     const progress = getLessonProgress(LESSON_ID);
+    console.log('🚀 Numbers page mounted, initial progress:', {
+      progress: progress.progress,
+      status: progress.status,
+      score: progress.score,
+      timeSpent: progress.timeSpent,
+    });
+    
+    // Mark lesson as in progress on mount
     if (progress.status === 'NOT_STARTED') {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS');
     }
+    
+    // Restore refs from stored progress (in case progress was updated after component mount)
+    const currentProgress = getLessonProgress(LESSON_ID);
+    const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig);
+    startTimeRef.current = estimatedStartTime;
+    baseAudioPlaysRef.current = estimatedAudioPlays;
+    
+    console.log('🔄 Restored refs:', {
+      estimatedAudioPlays,
+      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
+      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
+    });
+    
+    // Note: uniqueAudiosPlayedRef starts fresh each session, but we account for base progress
   }, [isAuthenticated]);
 
   // Initialize matching game
@@ -254,6 +307,9 @@ export default function NumbersPage() {
     setSelectedMatch(null);
     setMatchScore({ correct: 0, total: 0 });
     setIncorrectMatches([]);
+    setMatchingGameCompleted(false);
+    setMatchingGamePassed(false);
+    setMatchingGameScore(undefined);
   };
 
   // Handle matching game selection
@@ -272,9 +328,32 @@ export default function NumbersPage() {
           const pair = matchingPairs.find((p) => p.ku === kuValue);
           if (pair && pair.digit === digitValue && !pair.matched) {
             isCorrect = true;
-            setMatchingPairs((prev) =>
-              prev.map((p) => (p.digit === digitValue ? { ...p, matched: true } : p))
-            );
+            setMatchingPairs((prev) => {
+              const updated = prev.map((p) => (p.digit === digitValue ? { ...p, matched: true } : p));
+              // Check if all matched after update
+              if (updated.every((p) => p.matched) && !matchingGameCompleted) {
+                // Calculate practice score (matching game)
+                const currentScore = matchScore.total > 0 
+                  ? ((matchScore.correct + 1) / (matchScore.total + 1)) * 100 
+                  : 100;
+                const isPracticePassed = currentScore >= 70;
+                
+                console.log('✅ Matching game completed:', {
+                  correct: matchScore.correct + 1,
+                  total: matchScore.total + 1,
+                  score: currentScore,
+                  passed: isPracticePassed,
+                });
+                
+                // Use setTimeout to ensure state updates happen after this update
+                setTimeout(() => {
+                  setMatchingGameCompleted(true);
+                  setMatchingGamePassed(isPracticePassed);
+                  setMatchingGameScore(currentScore);
+                }, 0);
+              }
+              return updated;
+            });
             setMatchScore((prev) => ({ correct: prev.correct + 1, total: prev.total + 1 }));
           } else {
             setMatchScore((prev) => ({ ...prev, total: prev.total + 1 }));
@@ -294,9 +373,32 @@ export default function NumbersPage() {
           const pair = matchingPairs.find((p) => p.digit === digitValue);
           if (pair && pair.ku === kuValue && !pair.matched) {
             isCorrect = true;
-            setMatchingPairs((prev) =>
-              prev.map((p) => (p.digit === digitValue ? { ...p, matched: true } : p))
-            );
+            setMatchingPairs((prev) => {
+              const updated = prev.map((p) => (p.digit === digitValue ? { ...p, matched: true } : p));
+              // Check if all matched after update
+              if (updated.every((p) => p.matched) && !matchingGameCompleted) {
+                // Calculate practice score (matching game)
+                const currentScore = matchScore.total > 0 
+                  ? ((matchScore.correct + 1) / (matchScore.total + 1)) * 100 
+                  : 100;
+                const isPracticePassed = currentScore >= 70;
+                
+                console.log('✅ Matching game completed:', {
+                  correct: matchScore.correct + 1,
+                  total: matchScore.total + 1,
+                  score: currentScore,
+                  passed: isPracticePassed,
+                });
+                
+                // Use setTimeout to ensure state updates happen after this update
+                setTimeout(() => {
+                  setMatchingGameCompleted(true);
+                  setMatchingGamePassed(isPracticePassed);
+                  setMatchingGameScore(currentScore);
+                }, 0);
+              }
+              return updated;
+            });
             setMatchScore((prev) => ({ correct: prev.correct + 1, total: prev.total + 1 }));
           } else {
             setMatchScore((prev) => ({ ...prev, total: prev.total + 1 }));
@@ -314,11 +416,6 @@ export default function NumbersPage() {
 
         setSelectedMatch(null);
         setIncorrectMatches([]);
-
-        // Check if all matched
-        if (matchingPairs.every((p) => p.matched)) {
-          updateLessonProgress(LESSON_ID, 100, 'COMPLETED');
-        }
       } else {
         setSelectedMatch({ type, value });
         setIncorrectMatches([]);
@@ -334,7 +431,57 @@ export default function NumbersPage() {
     setCurrentQuestion(1);
     setMathScore({ correct: 0, total: 0 });
     setMathQuizCompleted(false);
+    setMathQuizPassed(false);
+    setMathQuizScore(undefined);
   };
+  
+  // Use useEffect to watch for both games being completed
+  useEffect(() => {
+    console.log('🔍 Practice completion check:', {
+      mathQuizCompleted,
+      matchingGameCompleted,
+      mathQuizScore,
+      matchingGameScore,
+      mathQuizPassed,
+      matchingGamePassed,
+    });
+    
+    if (mathQuizCompleted && matchingGameCompleted && mathQuizScore !== undefined && matchingGameScore !== undefined) {
+      // Both games completed - calculate combined practice score
+      const combinedScore = (mathQuizScore + matchingGameScore) / 2;
+      const isPracticePassed = mathQuizPassed && matchingGamePassed && combinedScore >= 70;
+      
+      console.log('🎯 Both practice games completed:', {
+        mathQuizScore,
+        matchingGameScore,
+        combinedScore,
+        mathQuizPassed,
+        matchingGamePassed,
+        isPracticePassed,
+      });
+      
+      // Calculate total time spent (base + session)
+      const currentProgress = getLessonProgress(LESSON_ID);
+      const baseTimeSpent = currentProgress?.timeSpent || 0;
+      const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
+      const totalTimeSpent = baseTimeSpent + sessionTimeMinutes;
+      const safeTimeSpent = Math.min(1000, totalTimeSpent);
+      
+      const progress = calculateProgress(isPracticePassed ? combinedScore : undefined);
+      const status = isPracticePassed ? 'COMPLETED' : 'IN_PROGRESS';
+      
+      console.log('💾 Updating lesson progress:', {
+        progress,
+        status,
+        combinedScore,
+        isPracticePassed,
+      });
+      
+      updateLessonProgress(LESSON_ID, progress, status, isPracticePassed ? combinedScore : undefined, safeTimeSpent);
+    } else {
+      console.log('⏳ Waiting for both games to complete...');
+    }
+  }, [mathQuizCompleted, matchingGameCompleted, mathQuizScore, matchingGameScore, mathQuizPassed, matchingGamePassed]);
 
   // Handle math answer selection
   const handleMathAnswer = (answerNum: number) => {
@@ -355,30 +502,134 @@ export default function NumbersPage() {
       setSelectedMathAnswer(null);
       setMathFeedback(null);
     } else {
+      // Calculate practice score (math quiz)
+      const practiceScorePercent = (mathScore.correct / mathScore.total) * 100;
+      const isPracticePassed = practiceScorePercent >= 70;
+      
       setMathQuizCompleted(true);
-      updateLessonProgress(LESSON_ID, 100, 'COMPLETED');
+      setMathQuizPassed(isPracticePassed);
+      setMathQuizScore(practiceScorePercent);
+      
+      // useEffect will handle checking if both games are completed
     }
   };
 
-  // Initialize games when switching to practice mode
+  // Track if games have been initialized to prevent resetting completed games
+  const gamesInitializedRef = useRef(false);
+  
+  // Initialize games when switching to practice mode (only once, not when switching between games)
   useEffect(() => {
-    if (mode === 'practice') {
+    if (mode === 'practice' && !gamesInitializedRef.current) {
+      // Only initialize once when entering practice mode
+      console.log('🎮 Initializing practice games');
       initializeMatchingGame();
       initializeMathQuiz();
+      gamesInitializedRef.current = true;
+    } else if (mode !== 'practice') {
+      // Reset flag when leaving practice mode
+      gamesInitializedRef.current = false;
     }
-  }, [mode, practiceGame]);
+  }, [mode]); // Only depend on mode, not practiceGame
 
-  const handleAudioPlay = () => {
-    const progress = getLessonProgress(LESSON_ID);
-    const newProgress = Math.min(100, progress.progress + 2);
-    updateLessonProgress(LESSON_ID, newProgress, 'IN_PROGRESS');
+  const calculateProgress = (practiceScore?: number) => {
+    // Get current progress to access latest timeSpent
+    const currentProgress = getLessonProgress(LESSON_ID);
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress?.timeSpent || 0;
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes;
+    
+    // Calculate progress from ACTUAL STATE, not from stored baseProgress
+    
+    // 1. Audio progress: Calculate from total unique audios played (base + new)
+    const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size;
+    const effectiveUniqueAudios = Math.min(totalUniqueAudios, progressConfig.totalAudios);
+    const audioProgress = Math.min(30, (effectiveUniqueAudios / progressConfig.totalAudios) * 30);
+    
+    // 2. Time progress: Calculate from total time spent (max 20%, 4 minutes = 20%)
+    const timeProgress = Math.min(20, totalTimeSpent * 5);
+    
+    // 3. Practice progress: Only if practice was completed
+    let practiceProgress = 0;
+    if (practiceScore !== undefined) {
+      // Practice just completed - give full 50% if passed (>= 70%)
+      if (practiceScore >= 70) {
+        practiceProgress = 50;
+      } else {
+        // Failed - proportional score (0-49%)
+        practiceProgress = Math.min(49, practiceScore * 0.5);
+      }
+    } else if (currentProgress?.status === 'COMPLETED') {
+      // Practice was completed before - give full 50%
+      practiceProgress = 50;
+    }
+    
+    // 4. Total progress = audio + time + practice (capped at 100%)
+    const totalProgress = Math.min(100, audioProgress + timeProgress + practiceProgress);
+    
+    console.log('📊 Progress calculation (from state):', {
+      totalUniqueAudios,
+      effectiveUniqueAudios,
+      audioProgress: audioProgress.toFixed(2),
+      totalTimeSpent,
+      timeProgress: timeProgress.toFixed(2),
+      practiceProgress: practiceProgress.toFixed(2),
+      totalProgress: totalProgress.toFixed(2),
+    });
+    
+    return totalProgress;
+  };
+
+  const handleAudioPlay = (audioKey: string) => {
+    // Track unique audios played (only count new ones) - check BEFORE adding
+    if (uniqueAudiosPlayedRef.current.has(audioKey)) {
+      // Already played this audio, don't update progress
+      console.log('🔇 Audio already played, skipping:', audioKey);
+      return;
+    }
+    
+    console.log('🔊 New unique audio played:', audioKey, 'Total unique:', uniqueAudiosPlayedRef.current.size + 1);
+    uniqueAudiosPlayedRef.current.add(audioKey);
+    
+    const currentProgress = getLessonProgress(LESSON_ID);
+    
+    // Don't pass practiceScore - we're just playing audio, not doing practice
+    const progress = calculateProgress(undefined);
+    const status = currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS';
+    
+    // Calculate time spent for this update
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
+    const baseTimeSpent = currentProgress.timeSpent || 0;
+    // Safeguard: if baseTimeSpent is unreasonably large (> 10000 minutes = ~166 hours), reset it
+    const safeBaseTimeSpent = baseTimeSpent > 10000 ? 0 : Math.max(baseTimeSpent, 0);
+    const totalTimeSpent = safeBaseTimeSpent + Math.max(sessionTimeMinutes, 0);
+    const safeTimeSpent = Math.min(1000, totalTimeSpent);
+    
+    console.log('📊 Progress update:', {
+      progress,
+      uniqueAudios: uniqueAudiosPlayedRef.current.size,
+      audioKey,
+    });
+    
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent);
   };
 
   const progress = getLessonProgress(LESSON_ID);
   const progressText = `${Math.round(progress.progress)}%`;
+  
+  // Calculate total examples count for Learn progress
+  const totalExamples = numbers.length + numberExamples.length; // 37 numbers + 8 examples = 45
+  // Learned count = estimated base count from previous sessions + new unique audios this session
+  // Use baseAudioPlaysRef which stores the estimated audio plays from previous sessions
+  const estimatedBaseCount = Math.min(baseAudioPlaysRef.current, totalExamples);
+  const newUniqueAudios = uniqueAudiosPlayedRef.current.size;
+  const learnedCount = Math.min(estimatedBaseCount + newUniqueAudios, totalExamples);
 
   const renderNumber = ({ item }: { item: NumberItem }) => {
     const audioFile = getNumberAudioFile(item.kurdish);
+    // Use number as unique key for tracking
+    const audioKey = `number-${item.number}`;
     return (
       <NumberCard
         number={item.number}
@@ -386,201 +637,45 @@ export default function NumbersPage() {
         english={item.english}
         audioFile={audioFile}
         audioAssets={audioAssets}
-        onPlay={handleAudioPlay}
+        onPlay={() => handleAudioPlay(audioKey)}
       />
     );
   };
 
-  // Example card component with audio playback
-  const ExampleCard = ({
-    kurdish,
-    english,
-    audioFile,
-    audioAssets,
-    onPlay,
-  }: {
-    kurdish: string;
-    english: string;
-    audioFile: string;
-    audioAssets: Record<string, any>;
-    onPlay?: () => void;
-  }) => {
-    const [playing, setPlaying] = useState(false);
-    const [sound, setSound] = useState<Audio.Sound | null>(null);
-    const scaleAnim = React.useRef(new Animated.Value(1)).current;
-    const opacityAnim = React.useRef(new Animated.Value(1)).current;
-
-    useEffect(() => {
-      Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-        shouldDuckAndroid: true,
-      });
-
-      return () => {
-        if (sound) {
-          sound.unloadAsync();
-        }
-      };
-    }, [sound]);
-
-    const playSound = async () => {
-      try {
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-          shouldDuckAndroid: true,
-        });
-
-        if (sound) {
-          await sound.unloadAsync();
-        }
-
-        const audioAsset = audioAssets[audioFile];
-        if (!audioAsset) {
-          setPlaying(false);
-          return;
-        }
-
-        await Asset.loadAsync(audioAsset);
-        const asset = Asset.fromModule(audioAsset);
-
-        const { sound: newSound } = await Audio.Sound.createAsync(
-          { uri: asset.localUri || asset.uri },
-          { shouldPlay: true, volume: 1.0 }
-        );
-
-        setSound(newSound);
-        setPlaying(true);
-        onPlay?.();
-
-        newSound.setOnPlaybackStatusUpdate((status) => {
-          if (status.isLoaded) {
-            if (status.isPlaying) {
-              setPlaying(true);
-            } else if (status.didJustFinish) {
-              setPlaying(false);
-            }
-          } else {
-            setPlaying(false);
-          }
-        });
-      } catch (error) {
-        setPlaying(false);
-      }
-    };
-
-    const handlePressIn = () => {
-      Animated.parallel([
-        Animated.spring(scaleAnim, {
-          toValue: 0.96,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacityAnim, {
-          toValue: 0.7,
-          duration: 100,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    };
-
-    const handlePressOut = () => {
-      Animated.parallel([
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacityAnim, {
-          toValue: 1,
-          duration: 100,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    };
-
-    const handlePress = () => {
-      playSound();
-    };
-
-    return (
-      <Pressable
-        onPress={handlePress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        style={styles.exampleCardPressable}
-      >
-        <Animated.View
-          style={[
-            styles.exampleCard,
-            {
-              transform: [{ scale: scaleAnim }],
-              opacity: opacityAnim,
-            },
-          ]}
-        >
-          <View style={styles.exampleTextContainer}>
-            <Text style={styles.exampleKurdish}>{kurdish}</Text>
-            <Text style={styles.exampleEnglish}>{english}</Text>
-          </View>
-          <View style={styles.exampleSpeakerContainer}>
-            <Ionicons
-              name={playing ? 'volume-high' : 'volume-low-outline'}
-              size={22}
-              color="#4b5563"
-            />
-          </View>
-        </Animated.View>
-      </Pressable>
-    );
-  };
-
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </Pressable>
-        <View style={styles.headerTitleContainer}>
+    <View style={styles.pageWrap}>
+      <LinearGradient colors={[SKY, SKY_DEEPER, SKY]} style={StyleSheet.absoluteFill} />
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} style={styles.backHit} hitSlop={8}>
+            <Ionicons name="chevron-back" size={24} color={TEXT_PRIMARY} />
+          </Pressable>
           <Text style={styles.headerTitle}>Numbers</Text>
+          <View style={styles.headerRight} />
         </View>
-        <View style={styles.headerSpacer} />
-      </View>
 
-      {/* Progress Info */}
-      <View style={styles.progressInfoContainer}>
-        <Text style={styles.progressInfoText}>
-          <Text style={styles.progressInfoLabel}>Progress: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            progress.progress === 100 && styles.progressInfoComplete
-          ]}>
-            {Math.round(progress.progress)}%
-          </Text>
-          <Text style={styles.progressInfoSeparator}> • </Text>
-          <Text style={styles.progressInfoLabel}>Learn: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            Math.floor((progress.progress / 100) * numbers.length) === numbers.length && styles.progressInfoComplete
-          ]}>
-            {Math.floor((progress.progress / 100) * numbers.length)}/{numbers.length}
-          </Text>
-          <Text style={styles.progressInfoSeparator}> • </Text>
-          <Text style={styles.progressInfoLabel}>Practice: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            progress.status === 'COMPLETED' && styles.progressInfoComplete
-          ]}>
-            {progress.status === 'COMPLETED' ? 'Done' : 'Pending'}
-          </Text>
-        </Text>
-      </View>
+        <View style={styles.progressBarCard}>
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Progress</Text>
+            <Text style={[styles.progressBarValue, progress.progress === 100 && styles.progressBarComplete]}>
+              {Math.round(progress.progress)}%
+            </Text>
+          </View>
+          <View style={styles.progressBarDivider} />
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Learn</Text>
+            <Text style={[styles.progressBarValue, learnedCount === totalExamples && styles.progressBarComplete]}>
+              {learnedCount}/{totalExamples}
+            </Text>
+          </View>
+          <View style={styles.progressBarDivider} />
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Practice</Text>
+            <Text style={[styles.progressBarValue, progress.status === 'COMPLETED' && styles.progressBarComplete]}>
+              {progress.status === 'COMPLETED' ? 'Done' : 'Pending'}
+            </Text>
+          </View>
+        </View>
 
       {/* Segmented Control - Mode Toggle */}
       <View style={styles.segmentedControl}>
@@ -739,7 +834,7 @@ export default function NumbersPage() {
                     english={example.en}
                     audioFile={example.audioFile}
                     audioAssets={audioAssets}
-                    onPlay={handleAudioPlay}
+                    onPlay={() => handleAudioPlay(`example-${example.audioFile}`)}
                   />
                 ))}
               </View>
@@ -971,89 +1066,85 @@ export default function NumbersPage() {
             </View>
 
             {matchingPairs.every((p) => p.matched) && (
-              <View style={styles.completedCard}>
-                <Ionicons name="checkmark-circle" size={64} color="#10b981" />
-                <Text style={styles.completedTitle}>Great job!</Text>
-                <Text style={styles.completedSubtitle}>
-                  You matched all numbers correctly!
+              <View style={styles.matchingCompletionMessage}>
+                <Ionicons name="checkmark-circle" size={24} color="#10b981" />
+                <Text style={styles.matchingCompletionText}>
+                  Great job! You matched all numbers correctly!
                 </Text>
               </View>
             )}
           </View>
         </ScrollView>
       )}
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f0f4f8',
-  },
+  pageWrap: { flex: 1 },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    minHeight: 44,
   },
-  backButton: {
-    width: 40,
-    height: 40,
+  backHit: {
+    width: 44,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 20,
-    marginRight: 8,
-  },
-  pressed: {
-    backgroundColor: '#f3f4f6',
-  },
-  headerTitleContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 22,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.5,
+  },
+  headerRight: { width: 44 },
+  progressBarCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    marginHorizontal: 20,
+    marginTop: 6,
+    marginBottom: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  progressBarSection: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressBarLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#6b7280',
+    marginBottom: 1,
+  },
+  progressBarValue: {
+    fontSize: 15,
     fontWeight: '700',
     color: '#111827',
   },
-  progressInfoContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
-    borderRadius: 12,
-    marginHorizontal: 20,
-    marginBottom: 12,
+  progressBarComplete: { color: '#10b981' },
+  progressBarDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#e5e7eb',
   },
-  progressInfoText: {
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 18,
-    flexWrap: 'nowrap',
-  },
-  progressInfoLabel: {
-    fontWeight: '600',
-    color: '#374151',
-  },
-  progressInfoValue: {
-    fontWeight: '700',
-    color: '#6b7280',
-  },
-  progressInfoSeparator: {
-    color: '#9ca3af',
-  },
-  progressInfoComplete: {
-    color: '#10b981',
-  },
-  headerSpacer: {
-    width: 40,
-  },
+  pressed: { backgroundColor: '#f3f4f6' },
   description: {
     fontSize: 15,
     color: '#6b7280',
@@ -1068,6 +1159,7 @@ const styles = StyleSheet.create({
   },
   row: {
     justifyContent: 'space-between',
+    alignItems: 'flex-start', // Prevent stretching
   },
   // Section styles
   section: {
@@ -1125,48 +1217,11 @@ const styles = StyleSheet.create({
   examplesList: {
     gap: 12,
   },
-  exampleCardPressable: {
-    width: '100%',
-  },
-  exampleCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    minHeight: 80,
-    position: 'relative',
-  },
-  exampleTextContainer: {
-    flex: 1,
-    paddingRight: 32,
-  },
-  exampleKurdish: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 6,
-  },
-  exampleEnglish: {
-    fontSize: 14,
-    color: '#6b7280',
-    fontStyle: 'italic',
-  },
-  exampleSpeakerContainer: {
-    position: 'absolute',
-    bottom: 12,
-    right: 12,
-    width: 28,
-    height: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   // Segmented Control
   segmentedControl: {
     flexDirection: 'row',
-    backgroundColor: '#f3f4f6',
     borderRadius: 12,
-    padding: 4,
+    gap: 8,
     marginHorizontal: 20,
     marginBottom: 12,
   },
@@ -1496,6 +1551,22 @@ const styles = StyleSheet.create({
   },
   gameTileTextMatched: {
     color: '#10b981',
+  },
+  // Matching game completion message (simple, small)
+  matchingCompletionMessage: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    gap: 6,
+  },
+  matchingCompletionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#10b981',
+    lineHeight: 20,
   },
 });
 

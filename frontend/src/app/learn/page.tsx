@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Play, Star, Trophy, Clock, BookOpen, Sparkles, Target, Zap, ArrowRight, Lock, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, Play, Star, Trophy, Clock, BookOpen, Sparkles, Target, Zap, ArrowRight, Lock } from 'lucide-react'
 import { useProgress } from '../../contexts/ProgressContext'
 
 interface Lesson {
@@ -369,14 +369,6 @@ export default function LearnPage() {
                   </div>
                 )}
 
-                {/* Completed Badge */}
-                {completed && !locked && (
-                  <div className="absolute top-4 left-4 z-10">
-                    <div className="bg-green-500 text-white rounded-full p-2 shadow-lg">
-                      <CheckCircle2 className="w-5 h-5" />
-                    </div>
-                  </div>
-                )}
                 {/* Top Right Icon */}
                 <div className="absolute top-4 right-4">
                   <div className="w-12 h-12 bg-gradient-to-br from-primaryBlue/10 to-supportLavender/10 rounded-2xl flex items-center justify-center text-2xl group-hover:scale-110 transition-transform duration-300">
@@ -384,34 +376,30 @@ export default function LearnPage() {
                   </div>
                 </div>
 
-                <h3 className="text-base sm:text-lg md:text-xl font-bold text-gray-800 mb-2 pr-8 sm:pr-16">
+                <h3 className="text-sm sm:text-base md:text-lg font-bold text-gray-800 mb-4 pr-8 sm:pr-16 leading-tight">
                   {lesson.title}
                 </h3>
-                
-                <p className="text-gray-600 mb-4 text-xs sm:text-sm">
-                  {lesson.description}
-                </p>
 
                 {/* Progress Bar */}
                 <div className="mb-4">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-gray-700">Progress</span>
-                    <span className="text-sm text-gray-500">
-                      {getLessonProgress(lesson.id).progress}%
+                    <span className="text-xs sm:text-sm font-medium text-gray-700">Progress</span>
+                    <span className="text-xs sm:text-sm text-gray-500">
+                      {Math.round(getLessonProgress(lesson.id).progress)}%
                     </span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div 
                       className="h-2 rounded-full transition-all duration-300 bg-gradient-to-r from-primaryBlue to-supportLavender"
-                      style={{ width: `${getLessonProgress(lesson.id).progress}%` }}
+                      style={{ width: `${Math.round(getLessonProgress(lesson.id).progress)}%` }}
                     ></div>
                   </div>
                 </div>
 
                 {/* Action Button */}
                 {locked ? (
-                  <div className="w-full bg-gray-300 text-gray-500 font-semibold py-3 px-6 rounded-2xl cursor-not-allowed text-center flex items-center justify-center space-x-2">
-                    <Lock className="w-4 h-4" />
+                  <div className="w-full bg-gray-300 text-gray-500 font-semibold py-2.5 sm:py-3 px-4 sm:px-6 rounded-2xl cursor-not-allowed text-center flex items-center justify-center space-x-2 text-xs sm:text-sm">
+                    <Lock className="w-3 h-3 sm:w-4 sm:h-4" />
                   </div>
                 ) : (
                   <Link 
@@ -468,15 +456,15 @@ export default function LearnPage() {
                         ? `/learn/verbs`
                         : `/learn/${selectedLanguage}`
                     }
-                    className={`w-full font-semibold py-2.5 sm:py-3 px-4 sm:px-6 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primaryBlue/50 focus:ring-offset-2 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 text-center flex items-center justify-center space-x-2 text-sm sm:text-base ${
+                    className={`w-full font-semibold py-2.5 sm:py-3 px-4 sm:px-6 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primaryBlue/50 focus:ring-offset-2 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 text-center flex items-center justify-center space-x-2 text-xs sm:text-sm ${
                       completed
                         ? 'bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700'
                         : 'bg-gradient-to-r from-primaryBlue to-supportLavender text-white hover:from-primaryBlue/90 hover:to-supportLavender/90'
                     }`}
                   >
-                    <Play className="w-4 h-4" />
+                    <Play className="w-3 h-3 sm:w-4 sm:h-4" />
                     <span>
-                      {completed ? 'Review' : 
+                      {completed ? 'Completed' : 
                        getLessonProgress(lesson.id).status === 'IN_PROGRESS' ? 'Continue' : 'Start'}
                     </span>
                   </Link>

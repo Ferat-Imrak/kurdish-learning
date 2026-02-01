@@ -14,25 +14,14 @@ import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
 import { LESSONS, getLessonRoute, getLessonIcon, Lesson } from '../../lib/data/lessons';
-import PageHeader from '../components/PageHeader';
 
-// Color palette for lesson types
-const getLessonTypeColor = (type: string): string => {
-  switch (type) {
-    case 'ALPHABET': return '#2563eb';
-    case 'NUMBERS': return '#7c3aed';
-    case 'GRAMMAR': return '#dc2626';
-    case 'WORDS': return '#059669';
-    case 'TIME': return '#ea580c';
-    case 'WEATHER': return '#0284c7';
-    case 'HOUSE': return '#c2410c';
-    case 'FOOD': return '#dc2626';
-    case 'VERBS': return '#7c3aed';
-    case 'CONVERSATIONS': return '#0891b2';
-    case 'NATURE': return '#16a34a';
-    case 'BODY': return '#e11d48';
-    default: return '#6b7280';
-  }
+const SKY = '#EAF3FF';
+const SKY_DEEPER = '#d6e8ff';
+const TEXT_PRIMARY = '#0F172A';
+
+// Standard color for all lessons: blue when in progress, green when completed
+const getLessonColor = (completed: boolean): string => {
+  return completed ? '#10b981' : '#2563eb'; // Green when completed, blue otherwise
 };
 
 export default function LearnScreen() {
@@ -119,25 +108,45 @@ export default function LearnScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2563eb" />
-        </View>
-      </SafeAreaView>
+      <View style={styles.pageWrap}>
+        <LinearGradient colors={[SKY, SKY_DEEPER, SKY]} style={StyleSheet.absoluteFill} />
+        <SafeAreaView style={styles.container} edges={['top']}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#2563eb" />
+          </View>
+        </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* Header */}
-        <PageHeader variant="learn" stats={{ stars: totalStars, achievements: totalAchievements }} />
+    <View style={styles.pageWrap}>
+      <LinearGradient colors={[SKY, SKY_DEEPER, SKY]} style={StyleSheet.absoluteFill} />
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {/* Top bar: centered Learn (no back on main Learn page) */}
+          <View style={styles.topBar}>
+            <Text style={styles.title}>Learn</Text>
+          </View>
 
-        {/* Progress Overview */}
-        <View style={styles.progressOverview}>
+          {/* Achievement bar: star, trophy (centered, no arrow) */}
+          <View style={styles.achievementBar}>
+            <View style={styles.achievementLeft}>
+              <Ionicons name="star" size={20} color="#fbbf24" />
+              <Text style={styles.achievementNum}>{totalStars}</Text>
+            </View>
+            <View style={styles.achievementDivider} />
+            <View style={styles.achievementRight}>
+              <Ionicons name="trophy" size={20} color="#eab308" />
+              <Text style={styles.achievementNum}>{totalAchievements}</Text>
+            </View>
+          </View>
+
+          {/* Progress Overview */}
+          <View style={styles.progressOverview}>
           <View style={styles.progressItem}>
             <View style={[styles.progressNumberContainer, { backgroundColor: '#d1fae5' }]}>
               <Text style={[styles.progressNumber, { color: '#10b981' }]}>
@@ -166,13 +175,13 @@ export default function LearnScreen() {
           </View>
         </View>
 
-        {/* Lessons List */}
-        <View style={styles.lessonsSection}>
+          {/* Lessons List */}
+          <View style={styles.lessonsSection}>
           {LESSONS.map((lesson, index) => {
             const locked = isLessonLocked(index);
             const completed = isLessonCompleted(lesson.id);
             const progress = getLessonProgress(lesson.id);
-            const color = getLessonTypeColor(lesson.type);
+            const color = getLessonColor(completed);
             const icon = getLessonIcon(lesson);
 
             return (
@@ -182,7 +191,6 @@ export default function LearnScreen() {
                 disabled={locked}
                 style={({ pressed }) => [
                   styles.lessonCard,
-                  { borderLeftWidth: 4, borderLeftColor: color },
                   locked && styles.lessonCardLocked,
                   pressed && !locked && styles.lessonCardPressed,
                 ]}
@@ -194,17 +202,15 @@ export default function LearnScreen() {
                       <Text style={styles.lessonTitle} numberOfLines={1}>
                         {lesson.title}
                       </Text>
-                      <View style={styles.headerRight}>
-                        <Text style={styles.lessonIcon}>{icon}</Text>
+                      <View style={styles.lessonIconBadge}>
+                        <Text style={styles.lessonIconBadgeText} numberOfLines={1}>
+                          {icon}
+                        </Text>
                       </View>
                     </View>
                   </View>
 
-                  <Text style={styles.lessonDescription} numberOfLines={2}>
-                    {lesson.description}
-                  </Text>
-
-                  {/* Progress Bar */}
+                  {/* Progress Bar (no percentage text) */}
                   {!locked && progress.progress > 0 && (
                     <View style={styles.progressContainer}>
                       <View style={styles.progressBar}>
@@ -215,7 +221,6 @@ export default function LearnScreen() {
                           style={[styles.progressFill, { width: `${progress.progress}%` }]}
                         />
                       </View>
-                      <Text style={styles.progressPercent}>{progress.progress}%</Text>
                     </View>
                   )}
 
@@ -228,7 +233,7 @@ export default function LearnScreen() {
                       </View>
                     ) : (
                       <LinearGradient
-                        colors={completed ? ['#10b981', '#059669'] : [color, color]}
+                        colors={completed ? ['#10b981', '#059669'] : ['#2563eb', '#1d4ed8']}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
                         style={styles.actionButtonGradient}
@@ -258,16 +263,19 @@ export default function LearnScreen() {
               </Pressable>
             );
           })}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  pageWrap: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#f0f4f8',
   },
   loadingContainer: {
     flex: 1,
@@ -277,12 +285,66 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 32,
   },
+  // Top bar: back + Learn
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    minHeight: 44,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.5,
+  },
+  // Achievement bar (centered, no arrow)
+  achievementBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    marginHorizontal: 20,
+    marginTop: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  achievementLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  achievementNum: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  achievementDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#e5e7eb',
+    marginHorizontal: 16,
+  },
+  achievementRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   // Progress Overview
   progressOverview: {
     flexDirection: 'row',
     backgroundColor: '#ffffff',
     marginHorizontal: 20,
-    marginTop: 16,
+    marginTop: 4,
     paddingVertical: 24,
     borderRadius: 20,
     marginBottom: 16,
@@ -363,13 +425,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#111827',
   },
-  headerRight: {
-    flexDirection: 'row',
+  lessonIconBadge: {
+    paddingVertical: 4,
+    paddingHorizontal: 4,
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
   },
-  lessonIcon: {
-    fontSize: 24,
+  lessonIconBadgeText: {
+    fontSize: 22,
   },
   lessonDescription: {
     fontSize: 15,
@@ -390,11 +453,6 @@ const styles = StyleSheet.create({
   progressFill: {
     height: '100%',
     borderRadius: 3,
-  },
-  progressPercent: {
-    fontSize: 13,
-    color: '#6b7280',
-    fontWeight: '500',
   },
   actionButton: {
     marginTop: 4,

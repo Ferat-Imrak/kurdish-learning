@@ -1,162 +1,118 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Dimensions } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useAuthStore } from '../../lib/store/authStore';
+import { useGamesProgressStore } from '../../lib/store/gamesProgressStore';
+import GameCard from '../components/GameCard';
 
-const { width } = Dimensions.get('window');
+// Theme A: design spec tokens
+const SKY = '#EAF3FF';
+const SKY_DEEPER = '#d6e8ff';
+const TEXT_PRIMARY = '#0F172A';
+const TEXT_MUTED = '#64748B';
 
-const games = [
-  {
-    id: 'flashcards',
-    title: 'Flashcards',
-    description: 'Learn vocabulary with interactive flashcards',
-    icon: '📚',
-    color: '#3A86FF',
-    route: '/games/flashcards' as any,
-  },
-  // More games will be added here
+const gamesList = [
+  { id: 'flashcards', title: 'Flashcards', description: 'Learn vocabulary with interactive flashcards', icon: '📚', iconBg: '#dcfce7', route: '/games/flashcards' as any },
+  { id: 'matching', title: 'Word Matching', description: 'Learn vocabulary', icon: '🔗', iconBg: '#dbeafe', route: '/games/matching' as any },
+  { id: 'memory-cards', title: 'Memory Cards', description: 'Learn vocabulary', icon: '🃏', iconBg: '#fee2e2', route: '/games/memory-cards' as any },
+  { id: 'translation-quiz', title: 'Translation Quiz', description: 'Learn vocabulary', icon: '🧠', iconBg: '#fce7f3', route: '/games/translation-quiz' as any },
+  { id: 'word-builder', title: 'Word Builder', description: 'Learn vocabulary', icon: '✏️', iconBg: '#ffedd5', route: '/games/word-builder' as any },
+  { id: 'sentence-builder', title: 'Sentence Builder', description: 'Learn vocabulary', icon: '📝', iconBg: '#ede9fe', route: '/games/sentence-builder' as any },
 ];
 
 export default function GamesScreen() {
   const router = useRouter();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const initialize = useGamesProgressStore((s) => s.initialize);
+
+  useEffect(() => {
+    if (isAuthenticated) initialize();
+  }, [isAuthenticated, initialize]);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Games</Text>
-      </View>
+    <View style={styles.pageWrap}>
+      <LinearGradient
+        colors={[SKY, SKY_DEEPER, SKY]}
+        style={StyleSheet.absoluteFill}
+      />
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        {/* Top bar: title only */}
+        <View style={styles.topBar}>
+          <Text style={styles.title}>Games</Text>
+        </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.description}>
+        {/* Subtitle */}
+        <Text style={styles.subtitle} numberOfLines={2}>
           Practice and learn Kurdish vocabulary through fun interactive games!
         </Text>
 
-        <View style={styles.gamesGrid}>
-          {games.map((game) => (
-            <Pressable
-              key={game.id}
-              onPress={() => router.push(game.route)}
-              style={({ pressed }) => [
-                styles.gameCard,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={styles.gameIcon}>{game.icon}</Text>
-              <Text style={styles.gameTitle}>{game.title}</Text>
-              <Text style={styles.gameDescription}>{game.description}</Text>
-              <View style={[styles.gameArrow, { backgroundColor: game.color }]}>
-                <Ionicons name="arrow-forward" size={20} color="#ffffff" />
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.list}>
+            {gamesList.map((game) => (
+              <View key={game.id} style={styles.gameCardWrap}>
+                <GameCard
+                  title={game.title}
+                  description={game.description}
+                  icon={game.icon}
+                  iconBg={game.iconBg}
+                  onPress={() => router.push(game.route)}
+                />
               </View>
-            </Pressable>
-          ))}
-        </View>
-
-        <View style={styles.comingSoonContainer}>
-          <Text style={styles.comingSoonTitle}>More Games Coming Soon!</Text>
-          <Text style={styles.comingSoonText}>
-            We're working on adding more fun games to help you learn Kurdish.
-          </Text>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+            ))}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  pageWrap: {
     flex: 1,
-    backgroundColor: '#f9fafb',
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    backgroundColor: '#ffffff',
+  safe: {
+    flex: 1,
   },
-  headerTitle: {
-    fontSize: 24,
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    minHeight: 44,
+  },
+  title: {
+    fontSize: 22,
     fontWeight: '700',
-    color: '#111827',
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.5,
   },
-  scrollView: {
+  subtitle: {
+    fontSize: 14,
+    color: TEXT_MUTED,
+    textAlign: 'center',
+    lineHeight: 20,
+    paddingHorizontal: 32,
+    marginBottom: 16,
+  },
+  scroll: {
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
+    paddingHorizontal: 16,
+    paddingTop: 8,
     paddingBottom: 40,
   },
-  description: {
-    fontSize: 16,
-    color: '#6b7280',
-    textAlign: 'center',
-    marginBottom: 24,
+  list: {
+    gap: 12,
   },
-  gamesGrid: {
-    gap: 16,
-    marginBottom: 32,
-  },
-  gameCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-    position: 'relative',
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-  gameIcon: {
-    fontSize: 48,
-    marginBottom: 12,
-  },
-  gameTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  gameDescription: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginBottom: 16,
-  },
-  gameArrow: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  comingSoonContainer: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    alignItems: 'center',
-  },
-  comingSoonTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  comingSoonText: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
+  gameCardWrap: {
+    marginBottom: 4,
   },
 });
-
-

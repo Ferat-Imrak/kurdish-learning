@@ -19,17 +19,17 @@ npm install
    
    **Create `.env` file in the `mobile/` directory:**
    ```bash
-   EXPO_PUBLIC_API_URL=http://YOUR_IP_ADDRESS:5001/api
+   EXPO_PUBLIC_API_URL=http://YOUR_IP_ADDRESS:8080/api
    ```
    
    Example:
    ```bash
-   EXPO_PUBLIC_API_URL=http://192.168.1.100:5001/api
+   EXPO_PUBLIC_API_URL=http://192.168.1.100:8080/api
    ```
    
    **Important:**
-   - Make sure your backend server is running on port 5001
-   - Your phone and computer must be on the same WiFi network
+   - Backend runs on port 8080 (see backend startup log for "Mobile access: http://...")
+   - Your phone and computer must be on the same WiFi network when using a local IP
    - Restart Expo after changing the `.env` file
 
 3. Start the development server:
@@ -49,25 +49,41 @@ npm run android
 
 ## Troubleshooting Network Errors
 
-If you see "Network error" or "Cannot connect to server":
+**"timeout" or "Cannot reach server"** – The app could not reach the backend. Common causes:
 
-1. **Check backend is running:**
+### Using Expo Tunnel (`npx expo start --tunnel`)
+
+With **tunnel**, your phone loads the app via the internet but API requests still go to `EXPO_PUBLIC_API_URL`. If that URL is your computer's local IP (e.g. `10.0.0.45`), the phone often **cannot** reach it because the phone may be on a different network (cellular or another WiFi).
+
+**Options:**
+
+1. **Run without tunnel (recommended for local dev):**
    ```bash
-   cd ../backend
-   npm run dev
+   npx expo start
    ```
+   Then connect your phone and computer to the **same WiFi**. Set `EXPO_PUBLIC_API_URL=http://YOUR_COMPUTER_IP:8080/api` in `mobile/.env`. Use the IP shown in the backend log ("Mobile access: http://...").
 
-2. **Verify API URL:**
-   - Check the console log when the app starts - it will show the API URL being used
-   - Make sure it's your computer's IP, not `localhost`
+2. **Expose the backend with ngrok (works with tunnel):**
+   ```bash
+   ngrok http 8080
+   ```
+   Copy the `https://xxxx.ngrok.io` URL, then in `mobile/.env`:
+   ```bash
+   EXPO_PUBLIC_API_URL=https://xxxx.ngrok.io/api
+   ```
+   Restart Expo. The phone can then reach the backend over the internet.
 
-3. **Check CORS:**
-   - The backend should allow all origins in development mode
-   - Check `backend/src/index.ts` CORS configuration
+### General checks
 
-4. **Same WiFi network:**
-   - Phone and computer must be on the same network
-   - Try pinging your computer's IP from your phone's browser: `http://YOUR_IP:5001/api/health`
+1. **Set API URL:** Create or edit `mobile/.env` with `EXPO_PUBLIC_API_URL=http://YOUR_COMPUTER_IP:8080/api`. Find your IP: `ifconfig | grep "inet " | grep -v 127.0.0.1` (Mac/Linux) or `ipconfig` (Windows). Restart Expo after changing `.env`.
+
+2. **Backend running:** `cd backend && npm run dev`. Backend listens on `0.0.0.0:8080` so the device can reach it.
+
+3. **Same WiFi:** When using a local IP, phone and computer must be on the same network. Test in the phone browser: `http://YOUR_IP:8080/api/health`.
+
+4. **macOS Firewall (same WiFi but still timeout):** The Mac may be blocking incoming connections. In **System Settings → Network → Firewall**:
+   - If Firewall is On: click **Options** and add **Node** (or **tsx**) and allow **Incoming connections**, or
+   - Temporarily turn Firewall Off to test; if login works, add an allow rule for Node/tsx and turn Firewall back On.
 
 ## Project Structure
 

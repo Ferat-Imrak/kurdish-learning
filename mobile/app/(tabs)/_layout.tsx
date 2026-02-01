@@ -4,9 +4,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../lib/store/authStore';
 
 export default function TabsLayout() {
-  // Use getState() to avoid subscriptions
-  const isAuthenticated = useAuthStore.getState().isAuthenticated;
-  const isLoading = useAuthStore.getState().isLoading;
+  // Subscribe to auth state changes (use hook, not getState())
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isLoading = useAuthStore((state) => state.isLoading);
 
   if (isLoading) {
     return (
@@ -29,19 +29,20 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#ffffff',
-        tabBarInactiveTintColor: '#bfdbfe',
+        tabBarActiveTintColor: '#2F6BFF',
+        tabBarInactiveTintColor: '#94a3b8',
         tabBarStyle: {
-          backgroundColor: '#3A86FF',
-          borderTopWidth: 0,
+          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          borderTopWidth: 1,
+          borderTopColor: 'rgba(15, 23, 42, 0.06)',
           height: Platform.OS === 'ios' ? 88 : 72,
           paddingBottom: Platform.OS === 'ios' ? 28 : 12,
           paddingTop: 8,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 8,
-          elevation: 8,
+          shadowOpacity: 0.06,
+          shadowRadius: 6,
+          elevation: 6,
         },
         tabBarLabelStyle: {
           fontSize: 12,

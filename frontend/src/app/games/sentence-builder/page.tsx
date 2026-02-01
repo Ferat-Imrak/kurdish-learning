@@ -5,6 +5,8 @@ import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import { ArrowLeft, RotateCcw, CheckCircle, XCircle, Volume2 } from "lucide-react"
 import AudioButton from "../../../components/lessons/AudioButton"
+import BackLink from "../../../components/BackLink"
+import { useGamesProgress } from "../../../contexts/GamesProgressContext"
 
 type Sentence = {
   id: string
@@ -1752,19 +1754,21 @@ const decks: Deck[] = [
   }
 ]
 
-// Progress tracking
-const getProgress = (categoryName: string): { completed: number; total: number } => {
-  if (typeof window === 'undefined') return { completed: 0, total: 0 }
-  const stored = localStorage.getItem(`sentence-builder-progress-${categoryName}`)
-  return stored ? JSON.parse(stored) : { completed: 0, total: 0 }
-}
-
-const saveProgress = (categoryName: string, completed: number, total: number) => {
-  if (typeof window === 'undefined') return
-  localStorage.setItem(`sentence-builder-progress-${categoryName}`, JSON.stringify({ completed, total }))
-}
+const SENTENCE_KEY = (name: string) => `sentence-builder-progress-${name}`
 
 export default function SentenceBuilderPage() {
+  const { getProgress: getGamesProgress, saveProgress: saveGamesProgress } = useGamesProgress()
+
+  const getProgress = (categoryName: string): { completed: number; total: number } => {
+    const raw = getGamesProgress(SENTENCE_KEY(categoryName))
+    if (!raw || typeof raw !== 'object' || !('completed' in (raw as object))) return { completed: 0, total: 0 }
+    const o = raw as { completed: number; total: number }
+    return { completed: o.completed ?? 0, total: o.total ?? 0 }
+  }
+
+  const saveProgress = (categoryName: string, completed: number, total: number) => {
+    saveGamesProgress(SENTENCE_KEY(categoryName), { completed, total })
+  }
   const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null)
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0)
   const [availableWords, setAvailableWords] = useState<string[]>([])
@@ -1876,7 +1880,15 @@ export default function SentenceBuilderPage() {
     setShowResult(false)
   }
 
+  // Sync browser history with category vs in-game view so browser back works correctly
+  useEffect(() => {
+    const onPopState = () => setSelectedDeck(null)
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
   const handleDeckSelect = (deck: Deck) => {
+    window.history.pushState({ view: 'game', deck: deck.name }, '', window.location.pathname)
     const deckToUse = deck.name === 'Master Challenge' 
       ? { ...deck, sentences: shuffleArray([...allSentences]).slice(0, 20) }
       : deck
@@ -1896,19 +1908,20 @@ export default function SentenceBuilderPage() {
   if (!selectedDeck) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
-        <div className="container mx-auto px-4 py-6">
-          <div className="mb-6">
-            <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center">Sentence Builder</h1>
+        <div className="container mx-auto px-4 py-6 md:max-w-[1320px]">
+          <BackLink href="/games" label="Back to Games" />
+          <div className="mb-6 md:mb-8">
+            <h1 className="text-2xl md:text-4xl lg:text-5xl font-bold text-kurdish-red text-center">Sentence Builder</h1>
           </div>
 
-          <div className="max-w-4xl mx-auto">
-            <p className="text-center text-lg text-gray-700 mb-8">
+          <div className="max-w-4xl mx-auto md:max-w-none">
+            <p className="text-center text-lg text-gray-700 mb-8 md:text-base md:text-gray-500 md:mb-6">
               Choose a category to start building Kurdish sentences!
             </p>
             
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6 md:max-w-[1320px] md:mx-auto">
               {decks.map((deck) => {
-                const totalSentences = deck.name === "Master Challenge" ? allSentences.length : deck.sentences.length
+                const totalSentences = deck.name === "Master Challenge" ? 20 : deck.sentences.length
                 const progress = getProgress(deck.name)
                 // Use saved total if available and valid, otherwise use current totalSentences
                 const effectiveTotal = (progress && progress.total > 0) ? progress.total : totalSentences
@@ -1917,33 +1930,35 @@ export default function SentenceBuilderPage() {
                 const progressPercentage = (progress && effectiveTotal > 0)
                   ? Math.round((progress.completed / effectiveTotal) * 100)
                   : 0
+                const showPercent = progressPercentage > 0 || isCompleted
                 
                 return (
                   <button
                     key={deck.name}
                     onClick={() => handleDeckSelect(deck)}
-                    className="card p-6 hover:shadow-lg transition-all hover:scale-105 text-center"
+                    className="card p-6 hover:shadow-lg transition-all hover:scale-105 text-center md:p-5 md:rounded-2xl md:flex md:flex-col md:h-full md:items-stretch md:text-left md:hover:shadow-xl md:hover:-translate-y-0.5 md:hover:ring-2 md:hover:ring-primaryBlue/30 md:focus-visible:outline md:focus-visible:ring-2 md:focus-visible:ring-primaryBlue md:focus-visible:ring-offset-2 cursor-pointer"
                   >
-                    <div className="text-4xl mb-3">{deck.icon}</div>
-                    <div className="font-semibold text-gray-800">{deck.name}</div>
-                    <div className="text-sm text-gray-500 mt-1">
+                    <div className="text-4xl mb-3 md:mb-4 md:flex md:justify-center">
+                      <span className="md:w-11 md:h-11 md:rounded-2xl md:bg-primaryBlue/5 md:flex md:items-center md:justify-center md:inline-flex md:text-2xl">
+                        {deck.icon}
+                      </span>
+                    </div>
+                    <div className="font-semibold text-gray-800 md:text-lg md:font-semibold md:mb-1">{deck.name}</div>
+                    <div className="text-sm text-gray-500 mt-1 md:text-sm md:text-gray-500">
                       {totalSentences} sentences
                     </div>
-                    <div className="mt-2">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-xs font-medium text-gray-700">Progress</span>
-                        <span className={`text-xs font-semibold ${
-                          isCompleted ? 'text-green-600' : 'text-gray-500'
-                        }`}>
-                          {isCompleted ? 'Completed' : progress ? `${progressPercentage}%` : '0%'}
+                    <div className="mt-2 md:mt-4 md:flex-1 md:flex md:flex-col md:justify-end">
+                      {showPercent && (
+                        <span className={`text-xs font-semibold block mb-1 md:text-xs md:text-gray-500 ${isCompleted ? 'text-green-600' : ''}`}>
+                          {isCompleted ? 'Completed' : `${progressPercentage}%`}
                         </span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-1.5">
+                      )}
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 md:h-2 md:bg-gray-100">
                         <div 
-                          className={`h-1.5 rounded-full transition-all duration-300 ${
+                          className={`h-1.5 md:h-2 rounded-full transition-all duration-300 ${
                             isCompleted 
                               ? 'bg-green-600' 
-                              : 'bg-gradient-to-r from-primaryBlue to-supportLavender'
+                              : 'bg-primaryBlue'
                           }`}
                           style={{ width: `${isCompleted ? 100 : (progress ? progressPercentage : 0)}%` }}
                         ></div>
@@ -1971,10 +1986,17 @@ export default function SentenceBuilderPage() {
     <div className="min-h-screen bg-gradient-to-br from-backgroundCream via-white to-backgroundCream">
       <div className="container mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
-          <Link href="/games" className="inline-flex items-center gap-2 text-primaryBlue hover:text-primaryBlue/80">
-            <ArrowLeft className="w-4 h-4" />
-            Back to Games
-          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedDeck(null)
+              window.history.back()
+            }}
+            className="text-gray-500 text-sm font-medium hover:text-gray-700 transition-colors inline-flex items-center gap-1.5"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Back to Categories
+          </button>
           
           <div className="flex items-center gap-4">
             <div className="text-sm text-gray-600">

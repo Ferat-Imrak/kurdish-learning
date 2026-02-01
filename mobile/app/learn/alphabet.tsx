@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,15 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+
+const SKY = '#EAF3FF';
+const SKY_DEEPER = '#d6e8ff';
+const TEXT_PRIMARY = '#0F172A';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
+import { restoreRefsFromProgress } from '../../lib/utils/progressHelper';
 import LetterCard from '../components/LetterCard';
 import ComparisonCard from '../components/ComparisonCard';
 
@@ -137,6 +143,23 @@ export default function AlphabetPage() {
   const router = useRouter();
   const { isAuthenticated } = useAuthStore();
   const { updateLessonProgress, getLessonProgress } = useProgressStore();
+  
+  // Progress tracking refs - will be restored from stored progress
+  const progressConfig = {
+    totalAudios: 37, // 31 letters + 6 comparison audios (3 cards × 2 letters each)
+    hasPractice: false,
+    audioWeight: 50,
+    timeWeight: 50,
+    audioMultiplier: 1.35, // 50% / 37 audios ≈ 1.35% per audio
+  };
+  
+  // Initialize refs - will be restored in useEffect
+  const storedProgress = getLessonProgress(LESSON_ID);
+  const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
+  const startTimeRef = useRef<number>(estimatedStartTime);
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
+  // Base audio plays estimated from stored progress
+  const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -144,60 +167,155 @@ export default function AlphabetPage() {
       return;
     }
 
-    // Mark lesson as in progress on mount
     const progress = getLessonProgress(LESSON_ID);
+    console.log('🚀 Alphabet page mounted, initial progress:', {
+      progress: progress.progress,
+      status: progress.status,
+      score: progress.score,
+      timeSpent: progress.timeSpent,
+    });
+    
+    // Mark lesson as in progress on mount
     if (progress.status === 'NOT_STARTED') {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS');
     }
+    
+    // Restore refs from stored progress
+    const currentProgress = getLessonProgress(LESSON_ID);
+    const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig);
+    startTimeRef.current = estimatedStartTime;
+    baseAudioPlaysRef.current = estimatedAudioPlays;
+    
+    console.log('🔄 Restored refs:', {
+      estimatedAudioPlays,
+      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
+      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
+    });
   }, [isAuthenticated]);
 
-  const handleAudioPlay = () => {
-    const progress = getLessonProgress(LESSON_ID);
-    const newProgress = Math.min(100, progress.progress + 2);
-    const newStatus = newProgress >= 100 ? 'COMPLETED' : 'IN_PROGRESS';
-    updateLessonProgress(LESSON_ID, newProgress, newStatus);
+  const calculateProgress = () => {
+    // Get current progress to access latest timeSpent
+    const currentProgress = getLessonProgress(LESSON_ID);
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress?.timeSpent || 0;
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes;
+    
+    // Calculate progress from ACTUAL STATE, not from stored baseProgress
+    
+    // 1. Audio progress: Calculate from total unique audios played (base + new)
+    const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size;
+    const effectiveUniqueAudios = Math.min(totalUniqueAudios, progressConfig.totalAudios);
+    const audioProgress = Math.min(50, (effectiveUniqueAudios / progressConfig.totalAudios) * 50);
+    
+    // 2. Time progress: Calculate from total time spent (max 50%, 5 minutes = 50%)
+    const timeProgress = Math.min(50, totalTimeSpent * 10);
+    
+    // 3. Total progress = audio + time (capped at 100%)
+    const totalProgress = Math.min(100, audioProgress + timeProgress);
+    
+    console.log('📊 Progress calculation (from state):', {
+      totalUniqueAudios,
+      effectiveUniqueAudios,
+      audioProgress: audioProgress.toFixed(2),
+      totalTimeSpent,
+      timeProgress: timeProgress.toFixed(2),
+      totalProgress: totalProgress.toFixed(2),
+    });
+    
+    return totalProgress;
+  };
+
+  const handleAudioPlay = (audioKey: string) => {
+    // Track unique audios played (only count new ones) - check BEFORE adding
+    if (uniqueAudiosPlayedRef.current.has(audioKey)) {
+      // Already played this audio, don't update progress
+      console.log('🔇 Audio already played, skipping:', audioKey);
+      return;
+    }
+    
+    console.log('🔊 New unique audio played:', audioKey, 'Total unique:', uniqueAudiosPlayedRef.current.size + 1);
+    uniqueAudiosPlayedRef.current.add(audioKey);
+    
+    const currentProgress = getLessonProgress(LESSON_ID);
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress.timeSpent || 0;
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes;
+    const safeTimeSpent = Math.min(1000, totalTimeSpent);
+    
+    const progress = calculateProgress();
+    const status = currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS';
+    
+    console.log('📊 Progress update:', {
+      progress,
+      uniqueAudios: uniqueAudiosPlayedRef.current.size,
+      audioKey,
+    });
+    
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent);
   };
 
   const progress = getLessonProgress(LESSON_ID);
-  const completedCount = Math.floor((progress.progress / 100) * letters.length);
-  const progressText = `${completedCount}/${letters.length}`;
+  
+  // Calculate learned count from actual unique audios (includes letters + comparisons)
+  const estimatedBaseCount = Math.min(baseAudioPlaysRef.current, progressConfig.totalAudios);
+  const newUniqueAudios = uniqueAudiosPlayedRef.current.size;
+  const learnedCount = Math.min(estimatedBaseCount + newUniqueAudios, progressConfig.totalAudios);
 
-  const renderLetter = ({ item }: { item: Letter }) => (
-    <LetterCard
-      glyph={item.glyph}
-      word={item.word}
-      meaning={item.meaning}
-      audioFile={getLetterAudioFile(item.glyph)}
-      audioAssets={audioAssets}
-      onPlay={handleAudioPlay}
-    />
-  );
+  const renderLetter = ({ item }: { item: Letter }) => {
+    const audioFile = getLetterAudioFile(item.glyph);
+    // Use letter glyph as unique key for tracking
+    const audioKey = `letter-${item.glyph}`;
+    return (
+      <LetterCard
+        glyph={item.glyph}
+        word={item.word}
+        meaning={item.meaning}
+        audioFile={audioFile}
+        audioAssets={audioAssets}
+        onPlay={() => handleAudioPlay(audioKey)}
+      />
+    );
+  };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </Pressable>
-        <View style={styles.headerTitleContainer}>
+    <View style={styles.pageWrap}>
+      <LinearGradient colors={[SKY, SKY_DEEPER, SKY]} style={StyleSheet.absoluteFill} />
+      <SafeAreaView style={styles.container} edges={['top']}>
+        {/* Header: back + centered Alphabet (match Learn/Games style) */}
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} style={styles.backHit} hitSlop={8}>
+            <Ionicons name="chevron-back" size={24} color={TEXT_PRIMARY} />
+          </Pressable>
           <Text style={styles.headerTitle}>Alphabet</Text>
-          <View style={styles.progressPill}>
-            <Text style={styles.progressText}>{progressText}</Text>
-          </View>
+          <View style={styles.headerRight} />
         </View>
-        <View style={styles.headerSpacer} />
-      </View>
 
-      <Text style={styles.description}>
-        Learn all 31 letters of the Kurdish alphabet
-      </Text>
+      {/* Progress & Learn bar (white card, matches achievement bar style) */}
+      <View style={styles.progressBarCard}>
+        <View style={styles.progressBarSection}>
+          <Text style={styles.progressBarLabel}>Progress</Text>
+          <Text style={[
+            styles.progressBarValue,
+            progress.progress === 100 && styles.progressBarComplete
+          ]}>
+            {Math.round(progress.progress)}%
+          </Text>
+        </View>
+        <View style={styles.progressBarDivider} />
+        <View style={styles.progressBarSection}>
+          <Text style={styles.progressBarLabel}>Learn</Text>
+          <Text style={[
+            styles.progressBarValue,
+            learnedCount === progressConfig.totalAudios && styles.progressBarComplete
+          ]}>
+            {learnedCount}/{progressConfig.totalAudios}
+          </Text>
+        </View>
+      </View>
 
       {/* Letters Grid with FlatList */}
       <FlatList
@@ -209,7 +327,7 @@ export default function AlphabetPage() {
         columnWrapperStyle={styles.row}
         showsVerticalScrollIndicator={false}
         scrollEnabled={true}
-        ListFooterComponent={
+        ListFooterComponent={(
           <>
             {/* Letter Comparison Section */}
             <View style={styles.section}>
@@ -238,6 +356,8 @@ export default function AlphabetPage() {
                 tip='I is short like "it", Î is long like "ee" in "see"'
                 audioAssets={audioAssets}
                 onPlay={handleAudioPlay}
+                audioKey1="comparison-i-1"
+                audioKey2="comparison-i-2"
               />
 
               {/* U vs Û */}
@@ -257,6 +377,8 @@ export default function AlphabetPage() {
                 tip='U is short like "put", Û is long like "oo" in "moon"'
                 audioAssets={audioAssets}
                 onPlay={handleAudioPlay}
+                audioKey1="comparison-u-1"
+                audioKey2="comparison-u-2"
               />
 
               {/* E vs Ê */}
@@ -276,6 +398,8 @@ export default function AlphabetPage() {
                 tip='E is short like "pet", Ê is long like "ay" in "say"'
                 audioAssets={audioAssets}
                 onPlay={handleAudioPlay}
+                audioKey1="comparison-e-1"
+                audioKey2="comparison-e-2"
               />
             </View>
 
@@ -330,72 +454,83 @@ export default function AlphabetPage() {
               </View>
             </View>
           </>
-        }
+        )}
       />
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  pageWrap: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#f0f4f8',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    minHeight: 44,
   },
-  backButton: {
-    width: 40,
-    height: 40,
+  backHit: {
+    width: 44,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 20,
-    marginRight: 8,
-  },
-  pressed: {
-    backgroundColor: '#f3f4f6',
-  },
-  headerTitleContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 22,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.5,
+  },
+  headerRight: {
+    width: 44,
+  },
+  progressBarCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    marginHorizontal: 20,
+    marginTop: 6,
+    marginBottom: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  progressBarSection: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressBarLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#6b7280',
+    marginBottom: 1,
+  },
+  progressBarValue: {
+    fontSize: 15,
     fontWeight: '700',
     color: '#111827',
   },
-  progressPill: {
-    backgroundColor: '#eff6ff',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#dbeafe',
+  progressBarComplete: {
+    color: '#10b981',
   },
-  progressText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#2563eb',
-  },
-  headerSpacer: {
-    width: 40,
-  },
-  description: {
-    fontSize: 15,
-    color: '#6b7280',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
-    lineHeight: 22,
+  progressBarDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#e5e7eb',
   },
   listContent: {
     paddingHorizontal: 12,
@@ -403,6 +538,7 @@ const styles = StyleSheet.create({
   },
   row: {
     justifyContent: 'space-between',
+    alignItems: 'flex-start', // Prevent stretching
   },
   section: {
     paddingHorizontal: 12,

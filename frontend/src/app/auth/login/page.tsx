@@ -56,11 +56,13 @@ export default function LoginPage() {
     setLoginError('')
     
     try {
+      // First, login with NextAuth
       const res = await signIn('credentials', {
         email: formData.usernameOrEmail, // NextAuth expects 'email' field, but we accept both username and email
         password: formData.password,
         redirect: false,
       })
+      
       if (res?.error) {
         // Check if it's a subscription error
         if (res.error === 'SUBSCRIPTION_EXPIRED' || res.error.includes('subscription')) {
@@ -68,8 +70,42 @@ export default function LoginPage() {
         } else {
           setLoginError('Invalid username/email or password. Please check your credentials and try again.')
         }
+        setIsLoading(false)
         return
       }
+
+      // NextAuth login successful - now get backend JWT token for API calls
+      try {
+        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+        const loginResponse = await fetch(`${API_BASE_URL}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: formData.usernameOrEmail.includes('@') ? formData.usernameOrEmail : undefined,
+            username: formData.usernameOrEmail.includes('@') ? undefined : formData.usernameOrEmail,
+            password: formData.password,
+          }),
+        })
+
+        if (loginResponse.ok) {
+          const data = await loginResponse.json()
+          if (data.token) {
+            // Store backend JWT token for API calls
+            localStorage.setItem('auth_token', data.token)
+            if (formData.rememberMe) {
+              sessionStorage.setItem('auth_token', data.token)
+            }
+            console.log('✅ Backend JWT token stored for API calls');
+          }
+        } else {
+          console.warn('⚠️ Failed to get backend token, but NextAuth login succeeded');
+        }
+      } catch (error) {
+        console.error('❌ Error getting backend token:', error);
+        // Continue anyway - user is logged in with NextAuth, just can't sync progress
+      }
+
+      // Successful login
       router.push('/dashboard')
     } catch (error: any) {
       if (error.message === 'SUBSCRIPTION_EXPIRED' || error.message?.includes('subscription')) {

@@ -261,9 +261,6 @@ export default function DailyPhrasesPage({ params }: { params: { dialect: string
                     <div className="text-xl font-bold text-kurdish-red mb-1">
                       {phrase.kurdish}
                     </div>
-                    <div className="text-sm text-gray-600">
-                      {phrase.pronunciation}
-                    </div>
                   </div>
                   
                   <div className="flex items-center justify-between">

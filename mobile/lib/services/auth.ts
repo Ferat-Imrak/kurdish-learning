@@ -31,12 +31,36 @@ export const login = async (credentials: LoginCredentials): Promise<AuthResponse
       ? { email: credentials.usernameOrEmail, password: credentials.password }
       : { username: credentials.usernameOrEmail, password: credentials.password };
 
+    console.log('🔐 Auth service: Login request payload:', { 
+      isEmail, 
+      usernameOrEmail: credentials.usernameOrEmail,
+      hasPassword: !!credentials.password 
+    });
+
     const response = await apiClient.post('/auth/login', loginPayload);
+
+    console.log('🔐 Auth service: Login response status:', response.status);
+    console.log('🔐 Auth service: Login response data:', {
+      hasUser: !!response.data.user,
+      hasToken: !!response.data.token,
+      userEmail: response.data.user?.email
+    });
 
     const { user, token } = response.data;
 
+    if (!user) {
+      console.error('🔐 Auth service: No user in response:', response.data);
+      return {
+        success: false,
+        error: 'Invalid response: user data missing',
+      };
+    }
+
     if (token) {
       await tokenService.setToken(token);
+      console.log('🔐 Auth service: Token stored successfully');
+    } else {
+      console.warn('🔐 Auth service: No token in response');
     }
 
     return {
@@ -52,7 +76,14 @@ export const login = async (credentials: LoginCredentials): Promise<AuthResponse
       },
       token,
     };
-  } catch (error) {
+  } catch (error: any) {
+    console.error('🔐 Auth service: Login error:', error);
+    if (error.response) {
+      console.error('🔐 Auth service: Error response:', {
+        status: error.response.status,
+        data: error.response.data
+      });
+    }
     return {
       success: false,
       error: handleApiError(error),

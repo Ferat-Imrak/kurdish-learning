@@ -19,223 +19,10 @@ import {
   CheckCircle,
   FileText
 } from 'lucide-react'
+import { useGamesProgress } from '../../contexts/GamesProgressContext'
 
-// Helper function to check if all flashcards categories are completed
-const areAllFlashcardsCompleted = (): boolean => {
-  if (typeof window === 'undefined') return false
-  
-  const categories = [
-    "Colors",
-    "Animals",
-    "Food & Meals",
-    "Family Members",
-    "Nature",
-    "Time & Schedule",
-    "Weather & Seasons",
-    "House & Objects",
-    "Numbers",
-    "Days & Months",
-    "Basic Question Words",
-    "Pronouns",
-    "Body Parts",
-    "Master Challenge"
-  ]
-  
-  // Check if all categories are completed (100%)
-  // A category is completed if progress.correct === progress.total
-  for (const category of categories) {
-    const stored = localStorage.getItem(`flashcards-progress-${category}`)
-    if (!stored) return false
-    
-    const progress = JSON.parse(stored)
-    
-    // Check if completed (correct equals total, meaning 100% completion)
-    if (progress.correct !== progress.total || progress.total === 0) {
-      return false
-    }
-  }
-  
-  return true
-}
-
-// Helper function to check if all matching game categories are completed
-const areAllMatchingCompleted = (): boolean => {
-  if (typeof window === 'undefined') return false
-  
-  const categories = [
-    "colors",
-    "animals",
-    "food",
-    "family",
-    "nature",
-    "time",
-    "weather",
-    "house",
-    "numbers",
-    "daysMonths",
-    "questions",
-    "pronouns",
-    "bodyParts",
-    "master"
-  ]
-  
-  // A category is completed if user has completed at least 10 rounds (50 for Master Challenge)
-  for (const category of categories) {
-    const stored = localStorage.getItem(`matching-progress-${category}`)
-    if (!stored) return false
-    
-    const rounds = JSON.parse(stored)
-    const requiredRounds = category === "master" ? 50 : 10
-    if (rounds < requiredRounds) return false
-  }
-  
-  return true
-}
-
-// Helper function to check if all word builder categories are completed
-const areAllWordBuilderCompleted = (): boolean => {
-  if (typeof window === 'undefined') return false
-  
-  const categories = [
-    "colors",
-    "animals",
-    "food",
-    "family",
-    "nature",
-    "time",
-    "weather",
-    "house",
-    "numbers",
-    "daysMonths",
-    "questions",
-    "pronouns",
-    "bodyParts",
-    "master"
-  ]
-  
-  // A category is completed if user has completed the required number of unique words
-  // Master Challenge: 50 words, regular categories: 20 words
-  for (const category of categories) {
-    const stored = localStorage.getItem(`wordbuilder-progress-${category}`)
-    if (!stored) return false
-    
-    const data = JSON.parse(stored)
-    // Handle both old format (number) and new format (object)
-    const uniqueWords = typeof data === 'number' ? data : (data.uniqueWords || 0)
-    // Check completion: Master Challenge needs 50, others need 20
-    const requiredWords = category === "master" ? 50 : 20
-    if (uniqueWords < requiredWords) return false
-  }
-  
-  return true
-}
-
-// Helper function to check if all picture quiz categories are completed
-const areAllPictureQuizCompleted = (): boolean => {
-  if (typeof window === 'undefined') return false
-  
-  const categories = [
-    "Colors",
-    "Animals",
-    "Food & Meals",
-    "Family Members",
-    "Nature",
-    "Time & Schedule",
-    "Weather & Seasons",
-    "House & Objects",
-    "Numbers",
-    "Days & Months",
-    "Basic Question Words",
-    "Pronouns",
-    "Body Parts",
-    "Master Challenge"
-  ]
-  
-  // A category is completed if user scored 80% or higher
-  for (const category of categories) {
-    const stored = localStorage.getItem(`picturequiz-progress-${category}`)
-    if (!stored) return false
-    
-    const progress = JSON.parse(stored)
-    if (progress.score / progress.total < 0.8) return false
-  }
-  
-  return true
-}
-
-// Helper function to check if all memory cards categories are completed
-const areAllMemoryCardsCompleted = (): boolean => {
-  if (typeof window === 'undefined') return false
-  
-  const categories = [
-    "Colors",
-    "Animals",
-    "Food & Meals",
-    "Nature",
-    "Weather & Seasons",
-    "House & Objects",
-    "Numbers",
-    "Body Parts",
-    "Master Challenge"
-  ]
-  
-  // A category is completed only when user won on ALL three difficulty levels (easy, medium, and hard)
-  const difficulties = ['easy', 'medium', 'hard']
-  for (const category of categories) {
-    let completedCount = 0
-    for (const difficulty of difficulties) {
-      const stored = localStorage.getItem(`memorycards-progress-${category}-${difficulty}`)
-      if (stored) {
-        const progress = JSON.parse(stored)
-        if (progress.completed) {
-          completedCount++
-        }
-      }
-    }
-    // Category is only completed if all 3 difficulties are done
-    if (completedCount !== 3) return false
-  }
-  
-  return true
-}
-
-// Helper function to check if all sentence builder categories are completed
-const areAllSentenceBuilderCompleted = (): boolean => {
-  if (typeof window === 'undefined') return false
-  
-  const categories = [
-    "Colors",
-    "Animals",
-    "Food & Meals",
-    "Family Members",
-    "Nature",
-    "Time & Schedule",
-    "Weather & Seasons",
-    "House & Objects",
-    "Numbers",
-    "Days & Months",
-    "Basic Question Words",
-    "Pronouns",
-    "Body Parts",
-    "Master Challenge"
-  ]
-  
-  // A category is completed if all sentences in that category are completed
-  for (const category of categories) {
-    const stored = localStorage.getItem(`sentence-builder-progress-${category}`)
-    if (!stored) return false
-    
-    const progress = JSON.parse(stored)
-    // Check if all sentences are completed (completed equals total)
-    if (progress.completed !== progress.total || progress.total === 0) {
-      return false
-    }
-  }
-  
-  return true
-}
-
-export default function GamesPage() {
+function useGamesCompletion() {
+  const { getProgress } = useGamesProgress()
   const [gameCompletions, setGameCompletions] = useState({
     flashcards: false,
     matching: false,
@@ -244,37 +31,58 @@ export default function GamesPage() {
     memoryCards: false,
     sentenceBuilder: false
   })
-  
+
   useEffect(() => {
-    const checkCompletion = () => {
-      setGameCompletions({
-        flashcards: areAllFlashcardsCompleted(),
-        matching: areAllMatchingCompleted(),
-        wordBuilder: areAllWordBuilderCompleted(),
-        pictureQuiz: areAllPictureQuizCompleted(),
-        memoryCards: areAllMemoryCardsCompleted(),
-        sentenceBuilder: areAllSentenceBuilderCompleted()
+    const check = () => {
+      const flashCategories = ["Colors", "Animals", "Food & Meals", "Family Members", "Nature", "Time & Schedule", "Weather & Seasons", "House & Objects", "Numbers", "Days & Months", "Basic Question Words", "Pronouns", "Body Parts", "Master Challenge"]
+      const flashcards = flashCategories.every(c => {
+        const p = getProgress(`flashcards-progress-${c}`) as { correct?: number; total?: number } | null
+        return p && p.total !== undefined && p.total > 0 && p.correct === p.total
       })
+      const matchCategories = ["colors", "animals", "food", "family", "nature", "time", "weather", "house", "numbers", "daysMonths", "questions", "pronouns", "bodyParts", "master"]
+      const matching = matchCategories.every(c => {
+        const rounds = getProgress(`matching-progress-${c}`) as number | undefined
+        const req = c === "master" ? 20 : 10
+        return typeof rounds === 'number' && rounds >= req
+      })
+      const wordCategories = matchCategories
+      const wordBuilder = wordCategories.every(c => {
+        const d = getProgress(`wordbuilder-progress-${c}`) as { uniqueWords?: number } | number | undefined
+        const n = typeof d === 'number' ? d : (d?.uniqueWords ?? 0)
+        const req = c === "master" ? 30 : 20
+        return n >= req
+      })
+      const pictureCategories = flashCategories
+      const pictureQuiz = pictureCategories.every(c => {
+        const p = getProgress(`picturequiz-progress-${c}`) as { score?: number; total?: number } | null
+        return p && p.total !== undefined && p.total > 0 && (p.score ?? 0) / p.total >= 0.8
+      })
+      const memoryCategories = ["Colors", "Animals", "Food & Meals", "Nature", "Weather & Seasons", "House & Objects", "Numbers", "Body Parts", "Master Challenge"]
+      const memoryCards = memoryCategories.every(cat => {
+        let completedCount = 0
+        for (const d of ['easy', 'medium', 'hard']) {
+          const p = getProgress(`memorycards-progress-${cat}-${d}`) as { completed?: boolean } | null
+          if (p?.completed) completedCount++
+        }
+        return completedCount === 3
+      })
+      const sentenceCategories = flashCategories
+      const sentenceBuilder = sentenceCategories.every(c => {
+        const p = getProgress(`sentence-builder-progress-${c}`) as { completed?: number; total?: number } | null
+        return p && p.total !== undefined && p.total > 0 && p.completed === p.total
+      })
+      setGameCompletions({ flashcards, matching, wordBuilder, pictureQuiz, memoryCards, sentenceBuilder })
     }
-    
-    // Check on mount
-    checkCompletion()
-    
-    // Listen for storage changes (cross-tab updates)
-    window.addEventListener('storage', checkCompletion)
-    
-    // Listen for focus events (when user returns to this tab)
-    window.addEventListener('focus', checkCompletion)
-    
-    // Check periodically in case of same-tab updates
-    const interval = setInterval(checkCompletion, 2000)
-    
-    return () => {
-      window.removeEventListener('storage', checkCompletion)
-      window.removeEventListener('focus', checkCompletion)
-      clearInterval(interval)
-    }
-  }, [])
+    check()
+    const t = setInterval(check, 2000)
+    return () => clearInterval(t)
+  }, [getProgress])
+
+  return gameCompletions
+}
+
+export default function GamesPage() {
+  const gameCompletions = useGamesCompletion()
   const games = [
     {
       id: 'flashcards',
@@ -301,12 +109,12 @@ export default function GamesPage() {
       href: '/games/word-builder'
     },
     {
-      id: 'picture-quiz',
+      id: 'translation-quiz',
       title: 'Translation Quiz',
       description: 'Translate English words to Kurdish',
       icon: Brain,
       color: 'from-yellow-400 to-yellow-600',
-      href: '/games/picture-quiz'
+      href: '/games/translation-quiz'
     },
     {
       id: 'memory-cards',

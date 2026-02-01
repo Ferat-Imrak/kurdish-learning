@@ -5,10 +5,14 @@ export async function apiRequest(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  // Get token from session or localStorage
+  // Get token from localStorage or sessionStorage
   const token = typeof window !== 'undefined' 
     ? localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')
     : null
+
+  if (!token && typeof window !== 'undefined') {
+    console.warn(`⚠️ No auth token found for API request to ${endpoint}. User may need to log out and log back in to get a token.`);
+  }
 
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
@@ -24,6 +28,11 @@ export async function apiRequest(
   if (!response.ok) {
     // Don't throw for 401 - just return empty data
     if (response.status === 401) {
+      if (!token) {
+        console.warn(`⚠️ API request to ${endpoint} returned 401 - no token available. Please log out and log back in.`);
+      } else {
+        console.warn(`⚠️ API request to ${endpoint} returned 401 - token may be expired. Please log out and log back in.`);
+      }
       return response
     }
     throw new Error(`API request failed: ${response.statusText}`)

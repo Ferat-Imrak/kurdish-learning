@@ -16,7 +16,7 @@ interface AudioButtonProps {
   phoneticText?: string
   audioFile?: string
   size?: 'small' | 'medium' | 'normal' | 'large'
-  onPlay?: () => void // Callback when audio starts playing
+  onPlay?: (audioKey?: string) => void // Callback when audio starts playing
 }
 
 export default function AudioButton({ 
@@ -79,11 +79,14 @@ export default function AudioButton({
         }
         
         try {
-        await audio.play()
+          await audio.play()
           onPlay?.()
-        return
+          return
         } catch (playError) {
           setIsPlaying(false)
+          console.error('Audio play error:', playError)
+          // Still call onPlay even if play fails (for progress tracking)
+          onPlay?.()
           throw playError
         }
       }
@@ -93,6 +96,8 @@ export default function AudioButton({
         const filename = getAudioFilename(kurdishText);
         // Try conversations subdirectory first (for Daily Conversations lesson)
         const conversationsPath = `/audio/kurdish-tts-mp3/conversations/${filename}.mp3`;
+        // Try common subdirectory (for common phrases used in conversations)
+        const commonPath = `/audio/kurdish-tts-mp3/common/${filename}.mp3`;
         // Try grammar subdirectory (where most lesson audio files are)
         const grammarPath = `/audio/kurdish-tts-mp3/grammar/${filename}.mp3`;
         const rootPath = `/audio/kurdish-tts-mp3/${filename}.mp3`;
@@ -116,9 +121,9 @@ export default function AudioButton({
           onPlay?.();
           return;
         } catch (conversationsError) {
-          // Try grammar path
+          // Try common path
           try {
-            const audio = new Audio(grammarPath);
+            const audio = new Audio(commonPath);
             
             await new Promise((resolve, reject) => {
               audio.onloadeddata = resolve;
@@ -134,10 +139,10 @@ export default function AudioButton({
             setIsLoading(false);
             onPlay?.();
             return;
-          } catch (grammarError) {
-            // Try root path as fallback
+          } catch (commonError) {
+            // Try grammar path
             try {
-              const audio = new Audio(rootPath);
+              const audio = new Audio(grammarPath);
               
               await new Promise((resolve, reject) => {
                 audio.onloadeddata = resolve;
@@ -153,8 +158,28 @@ export default function AudioButton({
               setIsLoading(false);
               onPlay?.();
               return;
-            } catch (localError) {
-              // File doesn't exist in any location, continue to API/fallbacks
+            } catch (grammarError) {
+              // Try root path as fallback
+              try {
+                const audio = new Audio(rootPath);
+                
+                await new Promise((resolve, reject) => {
+                  audio.onloadeddata = resolve;
+                  audio.onerror = reject;
+                  audio.load();
+                });
+                
+                audio.onended = () => {
+                  setIsPlaying(false)
+                  setIsLoading(false)
+                }
+                await audio.play();
+                setIsLoading(false);
+                onPlay?.();
+                return;
+              } catch (localError) {
+                // File doesn't exist in any location, continue to API/fallbacks
+              }
             }
           }
         }
@@ -243,6 +268,7 @@ export default function AudioButton({
         await audioCache.playAudio(word)
         setIsPlaying(false)
         setIsLoading(false)
+        onPlay?.()
         return
       }
 
@@ -255,6 +281,7 @@ export default function AudioButton({
           await speakKurdish(kurdishText || '', phoneticText)
           setIsPlaying(false)
           setIsLoading(false)
+          onPlay?.()
         }
       )
     } catch (error) {

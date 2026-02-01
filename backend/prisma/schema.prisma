@@ -18,6 +18,7 @@ model User {
   role               UserRole      @default(PARENT)
   subscriptionPlan   SubscriptionPlan? @default(MONTHLY)
   subscriptionEndDate DateTime?    // Subscription end date
+  subscriptionStatus String?       // Legacy column kept in sync with DB (do not drop)
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
@@ -44,6 +45,7 @@ model Child {
   progress    Progress[]
   achievements Achievement[]
   gameSessions GameSession[]
+  gamesProgress GamesProgress?
 
   @@map("children")
 }
@@ -163,6 +165,17 @@ model GameSession {
   child       Child    @relation(fields: [childId], references: [id], onDelete: Cascade)
 
   @@map("game_sessions")
+}
+
+// Per-user (child) games progress: flashcards, matching, word builder, etc.
+// Stored as JSON key-value; keys match localStorage (e.g. flashcards-progress-Colors, matching-progress-colors).
+model GamesProgress {
+  id        String   @id @default(cuid())
+  childId  String   @unique
+  data     Json     @default("{}")
+  updatedAt DateTime @updatedAt
+  child    Child    @relation(fields: [childId], references: [id], onDelete: Cascade)
+  @@map("games_progress")
 }
 
 // Enums

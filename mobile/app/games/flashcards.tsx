@@ -7,11 +7,19 @@ import {
   Pressable,
   Dimensions,
   Animated,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Match Games page: header + background
+const SKY = '#EAF3FF';
+const SKY_DEEPER = '#d6e8ff';
+const TEXT_PRIMARY = '#0F172A';
+import { useGamesProgressStore } from '../../lib/store/gamesProgressStore';
+import CategoryCard from '../components/CategoryCard';
 
 const { width } = Dimensions.get('window');
 
@@ -468,32 +476,11 @@ const decks: Deck[] = [
   },
 ];
 
-// Helper functions for progress tracking
-const getProgress = async (categoryName: string): Promise<{ correct: number; total: number } | null> => {
-  try {
-    const stored = await AsyncStorage.getItem(`flashcards-progress-${categoryName}`);
-    return stored ? JSON.parse(stored) : null;
-  } catch (error) {
-    console.error('Error getting progress:', error);
-    return null;
-  }
-};
-
-const saveProgress = async (categoryName: string, correct: number, total: number) => {
-  try {
-    const existing = await getProgress(categoryName);
-    const bestCorrect = existing ? Math.max(existing.correct, correct) : correct;
-    await AsyncStorage.setItem(
-      `flashcards-progress-${categoryName}`,
-      JSON.stringify({ correct: bestCorrect, total })
-    );
-  } catch (error) {
-    console.error('Error saving progress:', error);
-  }
-};
+const FLASHCARDS_KEY = (name: string) => `flashcards-progress-${name}`;
 
 export default function FlashcardsPage() {
   const router = useRouter();
+  const { getProgress: getGamesProgress, saveProgress: saveGamesProgress, data: gamesData } = useGamesProgressStore();
   const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
@@ -510,6 +497,19 @@ export default function FlashcardsPage() {
   const [showReviewCompletion, setShowReviewCompletion] = useState(false);
   const [deckProgress, setDeckProgress] = useState<Record<string, { correct: number; total: number }>>({});
 
+  const getProgress = (categoryName: string): { correct: number; total: number } | null => {
+    const raw = getGamesProgress(FLASHCARDS_KEY(categoryName));
+    if (!raw || typeof raw !== 'object' || !('correct' in (raw as object))) return null;
+    return raw as { correct: number; total: number };
+  };
+
+  const saveProgress = async (categoryName: string, correct: number, total: number) => {
+    const existing = getProgress(categoryName);
+    const bestCorrect = existing ? Math.max(existing.correct, correct) : correct;
+    await saveGamesProgress(FLASHCARDS_KEY(categoryName), { correct: bestCorrect, total });
+    setDeckProgress((prev) => ({ ...prev, [categoryName]: { correct: bestCorrect, total } }));
+  };
+
   // Flip animation
   const flipAnimation = React.useRef(new Animated.Value(0)).current;
 
@@ -519,19 +519,13 @@ export default function FlashcardsPage() {
 
   // Load progress for all decks
   useEffect(() => {
-    const loadProgress = async () => {
-      const progressMap: Record<string, { correct: number; total: number }> = {};
-      for (const deck of decks) {
-        const totalCards = deck.name === "Master Challenge" ? allCards.length : deck.cards.length;
-        const progress = await getProgress(deck.name);
-        if (progress) {
-          progressMap[deck.name] = progress;
-        }
-      }
-      setDeckProgress(progressMap);
-    };
-    loadProgress();
-  }, []);
+    const progressMap: Record<string, { correct: number; total: number }> = {};
+    for (const deck of decks) {
+      const progress = getProgress(deck.name);
+      if (progress) progressMap[deck.name] = progress;
+    }
+    setDeckProgress(progressMap);
+  }, [gamesData]);
 
   // Reset flip state whenever card index changes
   useEffect(() => {
@@ -784,66 +778,54 @@ export default function FlashcardsPage() {
     transform: [{ rotateY: backInterpolate }],
   };
 
+  const renderDeckItem = ({ item: deck }: { item: Deck }) => {
+    const totalCards = deck.name === 'Master Challenge' ? allCards.length : deck.cards.length;
+    const progress = deckProgress[deck.name];
+    const isCompleted = progress && progress.correct === totalCards && progress.total === totalCards;
+    const progressPercentage = progress
+      ? Math.round((progress.correct / progress.total) * 100)
+      : 0;
+    return (
+      <CategoryCard
+        title={deck.name}
+        subtitle={`${totalCards} cards`}
+        icon={deck.icon}
+        progressPercent={progressPercentage}
+        isCompleted={!!isCompleted}
+        onPress={() => handleDeckSelect(deck)}
+      />
+    );
+  };
+
   // Show deck selection if no deck is selected
   if (!selectedDeck) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="#3A86FF" />
-          </Pressable>
-          <Text style={styles.headerTitle}>Flashcards</Text>
-          <View style={styles.headerRight} />
-        </View>
-
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-          <Text style={styles.description}>
-            Choose a category to start learning with interactive flashcards!
-          </Text>
-
-          <View style={styles.deckGrid}>
-            {decks.map((deck) => {
-              const totalCards = deck.name === "Master Challenge" ? allCards.length : deck.cards.length;
-              const progress = deckProgress[deck.name];
-              const isCompleted = progress && progress.correct === totalCards && progress.total === totalCards;
-              const progressPercentage = progress
-                ? Math.round((progress.correct / progress.total) * 100)
-                : 0;
-
-              return (
-                <Pressable
-                  key={deck.name}
-                  onPress={() => handleDeckSelect(deck)}
-                  style={({ pressed }) => [
-                    styles.deckCard,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={styles.deckIcon}>{deck.icon}</Text>
-                  <Text style={styles.deckName}>{deck.name}</Text>
-                  <Text style={styles.deckCardCount}>{totalCards} cards</Text>
-                  <View style={styles.progressContainer}>
-                    <View style={styles.progressBar}>
-                      <View
-                        style={[
-                          styles.progressFill,
-                          {
-                            width: `${isCompleted ? 100 : progressPercentage}%`,
-                            backgroundColor: isCompleted ? '#10b981' : '#3A86FF',
-                          },
-                        ]}
-                      />
-                    </View>
-                    <Text style={[styles.progressText, isCompleted && styles.progressTextComplete]}>
-                      {isCompleted ? 'Completed' : progress ? `${progressPercentage}%` : '0%'}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            })}
+      <View style={styles.pageWrap}>
+        <LinearGradient colors={[SKY, SKY_DEEPER, SKY]} style={StyleSheet.absoluteFill} />
+        <SafeAreaView style={styles.categoriesContainer} edges={['top']}>
+          <View style={styles.header}>
+            <Pressable onPress={() => router.back()} style={styles.backHit} hitSlop={8}>
+              <Ionicons name="chevron-back" size={24} color={TEXT_PRIMARY} />
+            </Pressable>
+            <Text style={styles.headerTitle}>Flashcards</Text>
+            <View style={styles.headerRight} />
           </View>
-        </ScrollView>
-      </SafeAreaView>
+
+        <Text style={styles.description}>
+          Choose a category to start learning with interactive flashcards!
+        </Text>
+
+        <FlatList
+          data={decks}
+          keyExtractor={(item) => item.name}
+          numColumns={2}
+          columnWrapperStyle={styles.deckRow}
+          contentContainerStyle={styles.deckListContent}
+          renderItem={renderDeckItem}
+          showsVerticalScrollIndicator={false}
+        />
+        </SafeAreaView>
+      </View>
     );
   }
 
@@ -856,10 +838,12 @@ export default function FlashcardsPage() {
     }
 
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.completionContainer}>
-          <Text style={styles.completionEmoji}>🎉</Text>
-          <Text style={styles.completionTitle}>Perfect Score!</Text>
+      <View style={styles.pageWrap}>
+        <LinearGradient colors={[SKY, SKY_DEEPER, SKY]} style={StyleSheet.absoluteFill} />
+        <SafeAreaView style={styles.container} edges={['top']}>
+          <View style={styles.completionContainer}>
+            <Text style={styles.completionEmoji}>🎉</Text>
+            <Text style={styles.completionTitle}>Perfect Score!</Text>
           <Text style={styles.completionText}>
             You got all {selectedDeck?.cards.length} cards correct! Great job!
           </Text>
@@ -882,17 +866,20 @@ export default function FlashcardsPage() {
             </Pressable>
           </View>
         </View>
-      </SafeAreaView>
+        </SafeAreaView>
+      </View>
     );
   }
 
   // Show review completion screen after finishing review
   if (showReviewCompletion && reviewCompleted) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.completionContainer}>
-          <Text style={styles.completionEmoji}>📚</Text>
-          <Text style={styles.completionTitle}>Review Complete!</Text>
+      <View style={styles.pageWrap}>
+        <LinearGradient colors={[SKY, SKY_DEEPER, SKY]} style={StyleSheet.absoluteFill} />
+        <SafeAreaView style={styles.container} edges={['top']}>
+          <View style={styles.completionContainer}>
+            <Text style={styles.completionEmoji}>📚</Text>
+            <Text style={styles.completionTitle}>Review Complete!</Text>
           <Text style={styles.completionText}>
             You've reviewed all {incorrectCards.length} cards you marked as "Don't Know". Great effort!
           </Text>
@@ -922,7 +909,8 @@ export default function FlashcardsPage() {
             </Pressable>
           </View>
         </View>
-      </SafeAreaView>
+        </SafeAreaView>
+      </View>
     );
   }
 
@@ -930,14 +918,16 @@ export default function FlashcardsPage() {
   if (showReview && incorrectCards.length > 0) {
     const reviewCard = incorrectCards[reviewCardIndex];
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.header}>
-          <Pressable onPress={finishReview} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="#3A86FF" />
-          </Pressable>
-          <Text style={styles.headerTitle}>Review Mode</Text>
-          <View style={styles.headerRight} />
-        </View>
+      <View style={styles.pageWrap}>
+        <LinearGradient colors={[SKY, SKY_DEEPER, SKY]} style={StyleSheet.absoluteFill} />
+        <SafeAreaView style={styles.container} edges={['top']}>
+          <View style={styles.header}>
+            <Pressable onPress={finishReview} style={styles.backHit} hitSlop={8}>
+              <Ionicons name="chevron-back" size={24} color={TEXT_PRIMARY} />
+            </Pressable>
+            <Text style={styles.headerTitle}>Review Mode</Text>
+            <View style={styles.headerRight} />
+          </View>
 
         <View style={styles.statsContainer}>
           <View style={styles.statBox}>
@@ -993,9 +983,6 @@ export default function FlashcardsPage() {
               <Text style={styles.cardHint}>Tap to reveal translation</Text>
             </Animated.View>
             <Animated.View style={[styles.cardBack, backAnimatedStyle, reviewFlipped && styles.cardVisible]}>
-              <Text style={[styles.cardKurdish, { color: '#3A86FF' }]}>
-                {reviewCard?.kurdish.charAt(0).toUpperCase() + reviewCard?.kurdish.slice(1)}
-              </Text>
               <Text style={styles.cardEnglish}>{reviewCard?.english}</Text>
             </Animated.View>
           </Pressable>
@@ -1024,23 +1011,26 @@ export default function FlashcardsPage() {
             </Text>
           )}
         </View>
-      </SafeAreaView>
+        </SafeAreaView>
+      </View>
     );
   }
 
   // Show flashcard game interface
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Pressable onPress={resetDeck} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#3A86FF" />
-        </Pressable>
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerIcon}>{selectedDeck.icon}</Text>
-          <Text style={styles.headerTitle}>{selectedDeck.name}</Text>
+    <View style={styles.pageWrap}>
+      <LinearGradient colors={[SKY, SKY_DEEPER, SKY]} style={StyleSheet.absoluteFill} />
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={resetDeck} style={styles.backHit} hitSlop={8}>
+            <Ionicons name="chevron-back" size={24} color={TEXT_PRIMARY} />
+          </Pressable>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerIcon}>{selectedDeck.icon}</Text>
+            <Text style={styles.headerTitle}>{selectedDeck.name}</Text>
+          </View>
+          <View style={styles.headerRight} />
         </View>
-        <View style={styles.headerRight} />
-      </View>
 
       <Text style={styles.deckDescription}>{selectedDeck.description}</Text>
 
@@ -1081,14 +1071,13 @@ export default function FlashcardsPage() {
         <Pressable onPress={flipCard} style={styles.flashcard}>
           <Animated.View style={[styles.cardFront, frontAnimatedStyle, !isFlipped && styles.cardVisible]}>
             <Text style={styles.cardKurdish}>
-              {currentCard?.kurdish.charAt(0).toUpperCase() + currentCard?.kurdish.slice(1)}
+              {currentCard?.kurdish
+                ? currentCard.kurdish.charAt(0).toUpperCase() + currentCard.kurdish.slice(1)
+                : ''}
             </Text>
             <Text style={styles.cardHint}>Tap to reveal translation</Text>
           </Animated.View>
           <Animated.View style={[styles.cardBack, backAnimatedStyle, isFlipped && styles.cardVisible]}>
-            <Text style={[styles.cardKurdish, { color: '#3A86FF' }]}>
-              {currentCard?.kurdish.charAt(0).toUpperCase() + currentCard?.kurdish.slice(1)}
-            </Text>
             <Text style={styles.cardEnglish}>{currentCard?.english}</Text>
           </Animated.View>
         </Pressable>
@@ -1145,27 +1134,31 @@ export default function FlashcardsPage() {
             : "Tap the card to flip between Kurdish and English"}
         </Text>
       </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  pageWrap: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 8,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    backgroundColor: '#ffffff',
+    minHeight: 44,
   },
-  backButton: {
-    padding: 4,
+  backHit: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerCenter: {
     flex: 1,
@@ -1178,19 +1171,22 @@ const styles = StyleSheet.create({
     fontSize: 24,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
-    color: '#111827',
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.5,
   },
   headerRight: {
-    width: 32,
+    width: 44,
   },
   deckDescription: {
     fontSize: 14,
     color: '#6b7280',
     textAlign: 'center',
     paddingVertical: 8,
-    backgroundColor: '#ffffff',
+  },
+  categoriesContainer: {
+    flex: 1,
   },
   scrollView: {
     flex: 1,
@@ -1200,49 +1196,25 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   description: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#6b7280',
     textAlign: 'center',
-    marginBottom: 24,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    paddingTop: 4,
   },
-  deckGrid: {
+  deckRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     justifyContent: 'space-between',
-    gap: 12,
+    marginBottom: 12,
+    paddingHorizontal: 16,
   },
-  deckCard: {
-    width: (width - 52) / 2,
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+  deckListContent: {
+    paddingBottom: 40,
+    paddingTop: 4,
   },
   pressed: {
     opacity: 0.7,
-  },
-  deckIcon: {
-    fontSize: 40,
-    marginBottom: 8,
-  },
-  deckName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  deckCardCount: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginBottom: 12,
   },
   progressContainer: {
     width: '100%',
@@ -1372,8 +1344,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   cardEnglish: {
-    fontSize: 20,
-    color: '#6b7280',
+    fontSize: 36,
+    fontWeight: '700',
+    color: '#111827',
     textAlign: 'center',
   },
   cardHint: {
@@ -1556,4 +1529,5 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
   },
 });
+
 

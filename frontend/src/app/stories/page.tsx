@@ -32,10 +32,9 @@ type Story = {
 
 // Vocabulary dictionary - extracted from stories and flashcards
 const vocabularyDict: Record<string, string> = {
-  // Common words from stories
-  'mêşk': 'ant',
-  'mêşkek': 'an ant',
+  // Common words from stories (mişk = mouse)
   'sor': 'red',
+  'spî': 'white',
   'bax': 'garden',
   'baxê': 'garden (with preposition)',
   'gul': 'flower',
@@ -203,13 +202,13 @@ const vocabularyDict: Record<string, string> = {
 const stories: Story[] = [
   {
     id: 'story-9',
-    title: 'Mêşka Sor – The Red Ant',
-    summary: 'A story about a red ant who discovers the beauty of all colors.',
+    title: 'Mişka Spî – The White Mouse',
+    summary: 'A story about a white mouse who discovers the beauty of all colors.',
     paragraphs: [
-      { ku: 'Di rojekê de, mêşkek sor di nav baxê de dijî.', en: 'One day, a red ant lived in the garden.' },
+      { ku: 'Di rojekê de, mişkek spî di nav baxê de dijî.', en: 'One day, a white mouse lived in the garden.' },
       { ku: 'Ew gulên zer dît û kêf xwest.', en: 'She saw yellow flowers and wanted to have fun.' },
       { ku: 'Paşê çiçekek şîn li ser darekê nêzîkî wê rûnişt.', en: 'Then a blue bird sat on a tree near her.' },
-      { ku: 'Mêşk got: Sor im, zer hez dikim, û şîn jî bedew e!', en: 'The ant said: "I am red, I like yellow, and blue is also beautiful!"' },
+      { ku: 'Mişk got: Ez spî me, ez ji zer hez dikim, û şîn jî pir xweşik e!', en: 'The mouse said: "I am white, I like yellow, and blue is also beautiful!"' },
       { ku: 'Di dawiyê de, hêvî got: Her reng xwe xweşik e!', en: 'Finally, hope said: "Every color is beautiful!"' },
     ],
   },
@@ -449,52 +448,10 @@ export default function StoriesPage() {
     setIsPlaying(true)
     setCurrentParagraphIndex(paragraphIndex)
     
+    const cacheKey = cleanText.toLowerCase()
+
     try {
-      // Priority 1: Try local MP3 file first (downloaded audio)
-      const filename = getAudioFilename(cleanText)
-      // Try stories folder first, then fallback to root for backwards compatibility
-      const mp3Paths = [
-        `/audio/kurdish-tts-mp3/stories/${filename}.mp3`,
-        `/audio/kurdish-tts-mp3/${filename}.mp3`
-      ]
-      
-      for (const mp3Path of mp3Paths) {
-        try {
-          const audio = new Audio(mp3Path)
-          
-          // Test if file exists by trying to load it
-          await new Promise((resolve, reject) => {
-            audio.onloadeddata = resolve
-            audio.onerror = reject
-            audio.load()
-          })
-          
-          // File exists and loaded successfully
-          setAudioRef(audio)
-          audio.onended = () => {
-            setIsPlaying(false)
-            setCurrentParagraphIndex(null)
-            setAudioRef(null)
-          }
-          
-          audio.onerror = () => {
-            setIsPlaying(false)
-            setCurrentParagraphIndex(null)
-            setAudioRef(null)
-          }
-          
-          await audio.play()
-          return
-        } catch (localError) {
-          // File doesn't exist in this location, try next path
-          continue
-        }
-      }
-      // If neither path worked, continue to cache/API
-      
-      const cacheKey = cleanText.toLowerCase()
-      
-      // Priority 2: Check cache - INSTANT playback if cached!
+      // Priority 1: Check in-memory cache (instant for repeat plays, no 404s)
       if (kurdishTTSCache.has(cacheKey)) {
         const audioUrl = kurdishTTSCache.get(cacheKey)!
         const audio = new Audio(audioUrl)
@@ -515,12 +472,39 @@ export default function StoriesPage() {
         await audio.play()
         return
       }
-      
-      // Priority 3: Not cached - fetch from Kurdish TTS API
+
+      // Priority 2: Try pre-generated story MP3 if present (stories folder only; avoids root 404s)
+      const filename = getAudioFilename(cleanText)
+      const storyMp3Path = `/audio/kurdish-tts-mp3/stories/${filename}.mp3`
+      try {
+        const audio = new Audio(storyMp3Path)
+        await new Promise((resolve, reject) => {
+          audio.onloadeddata = resolve
+          audio.onerror = reject
+          audio.load()
+        })
+        setAudioRef(audio)
+        audio.onended = () => {
+          setIsPlaying(false)
+          setCurrentParagraphIndex(null)
+          setAudioRef(null)
+        }
+        audio.onerror = () => {
+          setIsPlaying(false)
+          setCurrentParagraphIndex(null)
+          setAudioRef(null)
+        }
+        await audio.play()
+        return
+      } catch {
+        // No local file; continue to API
+      }
+
+      // Priority 3: Fetch from Kurdish TTS API (then cached for next time)
       const response = await fetch('https://www.kurdishtts.com/api/tts-proxy', {
         method: 'POST',
         headers: {
-          'x-api-key': '399af84a0973b4cc4a8dec8c69ee48c06d3ac172',
+          'x-api-key': process.env.NEXT_PUBLIC_KURDISH_TTS_API_KEY || '8f183799c5a8be31514135110279812e7bc1229a',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -532,82 +516,30 @@ export default function StoriesPage() {
       if (response.ok) {
         const audioBlob = await response.blob()
         const audioUrl = URL.createObjectURL(audioBlob)
-        
-        // Cache for next time
         kurdishTTSCache.set(cacheKey, audioUrl)
-        
+
         const audio = new Audio(audioUrl)
         setAudioRef(audio)
-        console.log(`✅ TTS ready`)
-        
         audio.onended = () => {
           setIsPlaying(false)
           setCurrentParagraphIndex(null)
           setAudioRef(null)
         }
-        
-        audio.onerror = (e) => {
-          console.error('Audio playback error:', e)
+        audio.onerror = () => {
           setIsPlaying(false)
           setCurrentParagraphIndex(null)
           setAudioRef(null)
         }
-        
         await audio.play()
-      } else if (response.status === 503) {
-        console.log(`⚠️ TTS service temporarily unavailable, using browser fallback...`)
-        // Fallback to browser TTS
-        if ('speechSynthesis' in window) {
-          const utterance = new SpeechSynthesisUtterance(cleanText)
-          utterance.lang = 'ku'
-          utterance.rate = 0.7
-          utterance.pitch = 1.0
-          utterance.volume = 0.8
-          
-          utterance.onend = () => {
-            setIsPlaying(false)
-            setCurrentParagraphIndex(null)
-          }
-          
-          utterance.onerror = () => {
-            setIsPlaying(false)
-            setCurrentParagraphIndex(null)
-          }
-          
-          window.speechSynthesis.speak(utterance)
-        } else {
-          setIsPlaying(false)
-          setCurrentParagraphIndex(null)
-        }
       } else {
-        console.error(`TTS API error: ${response.status}`)
+        console.warn(`Kurdish TTS API error: ${response.status}`)
         setIsPlaying(false)
         setCurrentParagraphIndex(null)
       }
-    } catch (error) {
-      // Fallback to browser TTS on error
-      if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(cleanText)
-        utterance.lang = 'ku'
-        utterance.rate = 0.7
-        utterance.pitch = 1.0
-        utterance.volume = 0.8
-        
-        utterance.onend = () => {
-          setIsPlaying(false)
-          setCurrentParagraphIndex(null)
-        }
-        
-        utterance.onerror = () => {
-          setIsPlaying(false)
-          setCurrentParagraphIndex(null)
-        }
-        
-        window.speechSynthesis.speak(utterance)
-      } else {
-        setIsPlaying(false)
-        setCurrentParagraphIndex(null)
-      }
+    } catch {
+      // No browser TTS fallback for stories: only local MP3 or Kurdish TTS API
+      setIsPlaying(false)
+      setCurrentParagraphIndex(null)
     }
   }
 

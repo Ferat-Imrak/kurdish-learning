@@ -1,13 +1,15 @@
 "use client"
 
-import Link from "next/link"
+import PageContainer from "../../../components/PageContainer"
+import BackLink from "../../../components/BackLink"
 import { motion } from "framer-motion"
 import { useState, useEffect, useRef } from "react"
-import { Calendar, ArrowLeft, Clock, CalendarDays, RotateCcw, Shuffle, CheckCircle2, XCircle } from "lucide-react"
+import { Calendar, Clock, CalendarDays, RotateCcw, Shuffle, CheckCircle2, XCircle } from "lucide-react"
 import AudioButton from "../../../components/lessons/AudioButton"
 import { useProgress } from "../../../contexts/ProgressContext"
+import { restoreRefsFromProgress } from "../../../lib/progressHelper"
 
-const LESSON_ID = '2' // Days lesson ID
+const LESSON_ID = '3' // Days lesson ID
 
 // Helper function to get audio filename for each day
 function getDayAudioFile(ku: string): string {
@@ -69,8 +71,27 @@ function getCurrentDayIndex(): number {
 
 export default function DaysPage() {
   const { updateLessonProgress, getLessonProgress } = useProgress()
-  const startTimeRef = useRef<number>(Date.now())
-  const audioPlaysRef = useRef<number>(0)
+  
+  // Progress tracking refs - will be restored from stored progress
+  const progressConfig = {
+    totalAudios: 22, // 7 days + 3 time phrases + 2 week phrases + 2 day phrases + 8 examples
+    hasPractice: true,
+    audioWeight: 30,
+    timeWeight: 20,
+    practiceWeight: 50,
+    audioMultiplier: 1.36, // 30% / 22 audios ≈ 1.36% per audio
+  }
+  
+  // Initialize refs - will be restored in useEffect
+  const storedProgress = getLessonProgress(LESSON_ID)
+  const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig)
+  const startTimeRef = useRef<number>(estimatedStartTime)
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set())
+  // Base audio plays estimated from stored progress
+  const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays)
+  // Track if refs have been initialized to prevent re-initialization on re-renders
+  const refsInitializedRef = useRef(false)
+  
   const [mode, setMode] = useState<'learn' | 'practice'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('days-mode')
@@ -85,25 +106,125 @@ export default function DaysPage() {
     }
   }, [mode])
 
-  // Mark lesson as in progress on mount
+  // Initialize refs from stored progress - ONLY ONCE on mount
   useEffect(() => {
+    // Only initialize refs once on mount, not on every re-render
+    if (refsInitializedRef.current) {
+      return
+    }
+
     const progress = getLessonProgress(LESSON_ID)
+    console.log('🚀 Days page mounted, initial progress:', {
+      progress: progress.progress,
+      status: progress.status,
+      score: progress.score,
+      timeSpent: progress.timeSpent,
+    })
+    
+    // Mark lesson as in progress on mount
     if (progress.status === 'NOT_STARTED') {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS')
     }
-  }, [getLessonProgress, updateLessonProgress])
-
-  const calculateProgress = () => {
-    const timeSpent = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60) // minutes
-    // Audio clicks: max 50% (10 clicks = 50%)
-    const audioProgress = Math.min(50, audioPlaysRef.current * 5)
-    // Time spent: max 50% (5 minutes = 50%)
-    const timeProgress = Math.min(50, timeSpent * 10)
-    const progress = Math.min(100, audioProgress + timeProgress)
     
-    // Mark as completed if progress >= 80%
-    const status: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' = progress >= 80 ? 'COMPLETED' : 'IN_PROGRESS'
-    return { progress, status }
+    // Restore refs from stored progress - ONLY ONCE on mount
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig)
+    startTimeRef.current = estimatedStartTime
+    
+    // Only restore baseAudioPlaysRef if progress is significant (>20%)
+    if (currentProgress.progress > 20) {
+      baseAudioPlaysRef.current = Math.min(estimatedAudioPlays, progressConfig.totalAudios)
+    } else {
+      baseAudioPlaysRef.current = 0
+      console.log('🔄 Progress is low (<20%), resetting baseAudioPlaysRef to 0 for accurate tracking')
+    }
+    
+    // Safety check: if baseAudioPlaysRef is already at or near totalAudios, reset it
+    if (baseAudioPlaysRef.current >= progressConfig.totalAudios - 2) {
+      console.warn('⚠️ baseAudioPlaysRef is too high, resetting to 0 to prevent progress jump')
+      baseAudioPlaysRef.current = 0
+    }
+    
+    // Mark refs as initialized to prevent re-initialization
+    refsInitializedRef.current = true
+    
+    console.log('🔄 Restored refs (ONCE on mount):', {
+      storedProgress: currentProgress.progress,
+      estimatedAudioPlays,
+      baseAudioPlaysRef: baseAudioPlaysRef.current,
+      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
+      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
+    })
+  }, []) // Empty dependency array - only run once on mount
+
+  const calculateProgress = (practiceScore?: number) => {
+    // Get current progress to access latest timeSpent
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const storedProgress = currentProgress?.progress || 0
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress?.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    
+    // Calculate progress from ACTUAL STATE, not from stored baseProgress
+    
+    // 1. Audio progress: Calculate from total unique audios played (base + new)
+    const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size
+    const effectiveUniqueAudios = Math.min(totalUniqueAudios, progressConfig.totalAudios)
+    const audioProgress = Math.min(30, (effectiveUniqueAudios / progressConfig.totalAudios) * 30)
+    
+    // 2. Time progress: Calculate from total time spent (max 20%, 4 minutes = 20%)
+    const timeProgress = Math.min(20, totalTimeSpent * 5)
+    
+    // 3. Practice progress: Calculate from practice score (max 50%)
+    let practiceProgress = 0
+    if (progressConfig.hasPractice) {
+      if (practiceScore !== undefined) {
+        practiceProgress = Math.min(50, (practiceScore / 100) * 50)
+      } else if (currentProgress.score !== undefined) {
+        // Use stored practice score if available
+        practiceProgress = Math.min(50, (currentProgress.score / 100) * 50)
+      }
+    }
+    
+    // 4. Total progress = audio + time + practice (capped at 100%)
+    let calculatedProgress = Math.round(Math.min(100, audioProgress + timeProgress + practiceProgress))
+    
+    // SPECIAL CASE: If practice is completed (score >= 70), ensure progress is at least 100%
+    // This handles cases where audio/time weren't tracked but practice was completed
+    if (practiceScore !== undefined && practiceScore >= 70) {
+      calculatedProgress = 100
+      console.log('🎯 Practice passed (>=70%), setting progress to 100%')
+    } else if (currentProgress.score !== undefined && currentProgress.score >= 70) {
+      calculatedProgress = 100
+      console.log('🎯 Stored practice score passed (>=70%), setting progress to 100%')
+    }
+    
+    // IMPORTANT: Never decrease progress - always use the maximum of stored and calculated
+    // This prevents progress from dropping when refs are reset or recalculated
+    const totalProgress = Math.max(storedProgress, calculatedProgress)
+    
+    console.log('📊 Progress calculation (from state):', {
+      storedProgress,
+      totalUniqueAudios,
+      effectiveUniqueAudios,
+      audioProgress: audioProgress.toFixed(2),
+      totalTimeSpent,
+      timeProgress: timeProgress.toFixed(2),
+      practiceScore: practiceScore !== undefined ? practiceScore : 'undefined',
+      practiceProgress: practiceProgress.toFixed(2),
+      calculatedProgress,
+      totalProgress,
+      breakdown: {
+        audio: audioProgress.toFixed(2),
+        time: timeProgress.toFixed(2),
+        practice: practiceProgress.toFixed(2),
+        sum: (audioProgress + timeProgress + practiceProgress).toFixed(2),
+      },
+    })
+    
+    return totalProgress
   }
   
   const [practiceGame, setPracticeGame] = useState<'order' | 'matching'>('order')
@@ -113,6 +234,8 @@ export default function DaysPage() {
   const [selectedOrder, setSelectedOrder] = useState<string[]>([])
   const [orderFeedback, setOrderFeedback] = useState<boolean | null>(null)
   const [orderCompleted, setOrderCompleted] = useState(false)
+  const [orderScore, setOrderScore] = useState<number | undefined>(undefined)
+  const [orderPassed, setOrderPassed] = useState(false)
   
   // Matching game state
   const [matchingPairs, setMatchingPairs] = useState<Array<{ ku: string; en: string; matched: boolean }>>([])
@@ -121,6 +244,9 @@ export default function DaysPage() {
   const [selectedMatch, setSelectedMatch] = useState<{ type: 'ku' | 'en'; value: string } | null>(null)
   const [matchScore, setMatchScore] = useState({ correct: 0, total: 0 })
   const [incorrectMatches, setIncorrectMatches] = useState<Array<{ type: 'ku' | 'en'; value: string }>>([])
+  const [matchingCompleted, setMatchingCompleted] = useState(false)
+  const [matchingScore, setMatchingScore] = useState<number | undefined>(undefined)
+  const [matchingPassed, setMatchingPassed] = useState(false)
   
   const currentDayIndex = getCurrentDayIndex()
   
@@ -131,6 +257,8 @@ export default function DaysPage() {
     setSelectedOrder([])
     setOrderFeedback(null)
     setOrderCompleted(false)
+    setOrderScore(undefined)
+    setOrderPassed(false)
   }
   
   // Initialize matching game
@@ -145,6 +273,9 @@ export default function DaysPage() {
     setSelectedMatch(null)
     setMatchScore({ correct: 0, total: 0 })
     setIncorrectMatches([])
+    setMatchingCompleted(false)
+    setMatchingScore(undefined)
+    setMatchingPassed(false)
   }
   
   // Handle day order selection
@@ -162,9 +293,18 @@ export default function DaysPage() {
     const isCorrect = JSON.stringify(selectedOrder) === JSON.stringify(correctOrder)
     setOrderFeedback(isCorrect)
     if (isCorrect) {
+      // Calculate practice score (order game) - 100% if correct
+      const currentScore = 100
+      const isPracticePassed = currentScore >= 70
+      
       setOrderCompleted(true)
-      const { progress, status } = calculateProgress()
-      updateLessonProgress(LESSON_ID, progress, status)
+      setOrderPassed(isPracticePassed)
+      setOrderScore(currentScore)
+      
+      console.log('✅ Day order completed:', {
+        score: currentScore,
+        passed: isPracticePassed,
+      })
     }
   }
   
@@ -183,10 +323,43 @@ export default function DaysPage() {
           const pair = matchingPairs.find(p => p.ku === kuValue && p.en === enValue)
           if (pair && !pair.matched) {
             isCorrect = true
-            setMatchingPairs(prev => prev.map(p => 
-              p.ku === kuValue ? { ...p, matched: true } : p
-            ))
-            setMatchScore(prev => ({ correct: prev.correct + 1, total: prev.total + 1 }))
+            // Update matching pairs and calculate score in one go
+            setMatchingPairs(prev => {
+              const updated = prev.map(p => 
+                p.ku === kuValue ? { ...p, matched: true } : p
+              )
+              // Check if all matched after update
+              if (updated.every(p => p.matched) && !matchingCompleted) {
+                // Calculate practice score (matching game) using updated score
+                setMatchScore(prevScore => {
+                  const updatedScore = { correct: prevScore.correct + 1, total: prevScore.total + 1 }
+                  const currentScore = updatedScore.total > 0 
+                    ? Math.round((updatedScore.correct / updatedScore.total) * 100)
+                    : 100
+                  const isPracticePassed = currentScore >= 70
+                  
+                  console.log('✅ Matching game completed:', {
+                    correct: updatedScore.correct,
+                    total: updatedScore.total,
+                    score: currentScore,
+                    passed: isPracticePassed,
+                  })
+                  
+                  // Set completion states after state update
+                  setTimeout(() => {
+                    setMatchingCompleted(true)
+                    setMatchingPassed(isPracticePassed)
+                    setMatchingScore(currentScore)
+                  }, 0)
+                  
+                  return updatedScore
+                })
+              } else {
+                // Update match score for correct match
+                setMatchScore(prev => ({ correct: prev.correct + 1, total: prev.total + 1 }))
+              }
+              return updated
+            })
           } else {
             setMatchScore(prev => ({ ...prev, total: prev.total + 1 }))
             setIncorrectMatches([
@@ -205,10 +378,43 @@ export default function DaysPage() {
           const pair = matchingPairs.find(p => p.ku === kuValue && p.en === enValue)
           if (pair && !pair.matched) {
             isCorrect = true
-            setMatchingPairs(prev => prev.map(p => 
-              p.ku === kuValue ? { ...p, matched: true } : p
-            ))
-            setMatchScore(prev => ({ correct: prev.correct + 1, total: prev.total + 1 }))
+            // Update matching pairs and calculate score in one go
+            setMatchingPairs(prev => {
+              const updated = prev.map(p => 
+                p.ku === kuValue ? { ...p, matched: true } : p
+              )
+              // Check if all matched after update
+              if (updated.every(p => p.matched) && !matchingCompleted) {
+                // Calculate practice score (matching game) using updated score
+                setMatchScore(prevScore => {
+                  const updatedScore = { correct: prevScore.correct + 1, total: prevScore.total + 1 }
+                  const currentScore = updatedScore.total > 0 
+                    ? Math.round((updatedScore.correct / updatedScore.total) * 100)
+                    : 100
+                  const isPracticePassed = currentScore >= 70
+                  
+                  console.log('✅ Matching game completed:', {
+                    correct: updatedScore.correct,
+                    total: updatedScore.total,
+                    score: currentScore,
+                    passed: isPracticePassed,
+                  })
+                  
+                  // Set completion states after state update
+                  setTimeout(() => {
+                    setMatchingCompleted(true)
+                    setMatchingPassed(isPracticePassed)
+                    setMatchingScore(currentScore)
+                  }, 0)
+                  
+                  return updatedScore
+                })
+              } else {
+                // Update match score for correct match
+                setMatchScore(prev => ({ correct: prev.correct + 1, total: prev.total + 1 }))
+              }
+              return updated
+            })
           } else {
             setMatchScore(prev => ({ ...prev, total: prev.total + 1 }))
             setIncorrectMatches([
@@ -225,15 +431,6 @@ export default function DaysPage() {
         
         setSelectedMatch(null)
         setIncorrectMatches([])
-        
-        // Check if all matched
-        if (matchingPairs.every(p => p.matched || (p.ku === (type === 'ku' ? value : selectedMatch.value) && p.en === (type === 'en' ? value : selectedMatch.value)))) {
-          const allMatched = matchingPairs.every(p => p.matched)
-          if (allMatched) {
-            const { progress, status } = calculateProgress()
-            updateLessonProgress(LESSON_ID, progress, status)
-          }
-        }
       } else {
         setSelectedMatch({ type, value })
         setIncorrectMatches([])
@@ -250,35 +447,145 @@ export default function DaysPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, practiceGame])
 
-  const handleAudioPlay = () => {
-    const progress = getLessonProgress(LESSON_ID)
-    const newProgress = Math.min(100, progress.progress + 2)
-    updateLessonProgress(LESSON_ID, newProgress, 'IN_PROGRESS')
+  // Use useEffect to watch for both games being completed
+  useEffect(() => {
+    console.log('🔍 Practice completion check:', {
+      orderCompleted,
+      matchingCompleted,
+      orderScore,
+      matchingScore,
+      orderPassed,
+      matchingPassed,
+    })
+    
+    if (orderCompleted && matchingCompleted && orderScore !== undefined && matchingScore !== undefined) {
+      // Both games completed - calculate combined practice score
+      const combinedScore = (orderScore + matchingScore) / 2
+      const isPracticePassed = orderPassed && matchingPassed && combinedScore >= 70
+      
+      console.log('🎯 Both practice games completed:', {
+        orderScore,
+        matchingScore,
+        combinedScore,
+        orderPassed,
+        matchingPassed,
+        isPracticePassed,
+      })
+      
+      // Calculate total time spent (base + session)
+      const currentProgress = getLessonProgress(LESSON_ID)
+      const baseTimeSpent = currentProgress?.timeSpent || 0
+      const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+      const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+      const safeTimeSpent = Math.min(1000, totalTimeSpent)
+      
+      // Always pass combinedScore to calculateProgress so it can set progress to 100% if score >= 70
+      const progress = calculateProgress(combinedScore)
+      const status = isPracticePassed ? 'COMPLETED' : 'IN_PROGRESS'
+      
+      console.log('💾 Updating lesson progress after practice completion:', {
+        progress,
+        status,
+        combinedScore,
+        isPracticePassed,
+        orderScore,
+        matchingScore,
+      })
+      
+      updateLessonProgress(LESSON_ID, progress, status, combinedScore, safeTimeSpent)
+    } else {
+      console.log('⏳ Waiting for both games to complete...')
+    }
+  }, [orderCompleted, matchingCompleted, orderScore, matchingScore, orderPassed, matchingPassed])
+  
+  // Check if practice was already completed (score exists) but progress doesn't reflect it
+  // This runs after calculateProgress is defined and whenever progress/score changes
+  useEffect(() => {
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Case 1: Practice score exists and >= 70, but progress is not 100% - FORCE to 100%
+    if (currentProgress.score !== undefined && currentProgress.score >= 70 && currentProgress.progress < 100) {
+      console.log('🔍 Practice score >= 70 but progress is not 100%, forcing to 100%...', {
+        storedProgress: currentProgress.progress,
+        storedScore: currentProgress.score,
+      })
+      
+      // Force progress to 100% when practice is completed (score >= 70)
+      const shouldBeCompleted = currentProgress.score >= 70
+      const newStatus = shouldBeCompleted ? 'COMPLETED' : currentProgress.status
+      
+      console.log('🔄 Forcing progress to 100% because practice score >= 70:', {
+        newProgress: 100,
+        newStatus,
+        storedScore: currentProgress.score,
+        oldProgress: currentProgress.progress,
+      })
+      
+      // Always update to 100% if score >= 70
+      updateLessonProgress(LESSON_ID, 100, newStatus, currentProgress.score, currentProgress.timeSpent)
+    }
+  }, [getLessonProgress, updateLessonProgress])
+  
+  // Listen for progress updates (including from backend sync) and fix if needed
+  useEffect(() => {
+    const handleProgressUpdate = () => {
+      const currentProgress = getLessonProgress(LESSON_ID)
+      // If practice score >= 70 but progress is not 100%, force it to 100%
+      if (currentProgress.score !== undefined && currentProgress.score >= 70 && currentProgress.progress < 100) {
+        console.log('🔧 Progress update detected - fixing progress to 100% (score >= 70)')
+        updateLessonProgress(LESSON_ID, 100, 'COMPLETED', currentProgress.score, currentProgress.timeSpent)
+      }
+    }
+    
+    window.addEventListener('lessonProgressUpdated', handleProgressUpdate)
+    return () => window.removeEventListener('lessonProgressUpdated', handleProgressUpdate)
+  }, [getLessonProgress, updateLessonProgress])
+
+  const handleAudioPlay = (audioKey: string) => {
+    // Track unique audios played (only count new ones) - check BEFORE adding
+    if (uniqueAudiosPlayedRef.current.has(audioKey)) {
+      console.log('🔊 Duplicate audio play ignored:', audioKey)
+      return
+    }
+    
+    console.log('🔊 New unique audio played:', audioKey, 'Total unique:', uniqueAudiosPlayedRef.current.size + 1)
+    uniqueAudiosPlayedRef.current.add(audioKey)
+    
+    // Calculate total time spent (base + session)
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const baseTimeSpent = currentProgress?.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const safeTimeSpent = Math.min(1000, totalTimeSpent)
+    
+    // Don't pass practiceScore - we're just playing audio, not doing practice
+    const progress = calculateProgress(undefined)
+    // Set status to COMPLETED when progress reaches 100%, otherwise preserve existing status or set to IN_PROGRESS
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS')
+    
+    console.log('📊 Progress update:', {
+      progress,
+      uniqueAudios: uniqueAudiosPlayedRef.current.size,
+      audioKey,
+    })
+    
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent)
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
-      <div className="container mx-auto px-4 py-6">
-        <div className="mb-6">
-          <Link href="/learn" className="text-kurdish-red font-bold flex items-center gap-2 mb-4">
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </Link>
-          <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center">Days of the Week</h1>
-        </div>
-
-        <p className="text-gray-700 mb-6 text-center max-w-2xl mx-auto">
-          Learn the seven days of the week in Kurdish. Each day has its own unique name and pronunciation.
-        </p>
+      <PageContainer>
+        <BackLink />
+        <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center mb-6">Days of the Week</h1>
 
         {/* Mode Toggle */}
-        <div className="flex justify-center gap-2 mb-6">
+        <div className="flex justify-center gap-2 mb-8">
           <button
             onClick={() => setMode('learn')}
             className={`px-6 py-2 rounded-lg font-medium transition-colors ${
               mode === 'learn'
-                ? 'bg-kurdish-red text-white shadow-lg'
-                : 'bg-white text-gray-600 hover:bg-gray-50'
+                ? 'bg-gradient-to-r from-primaryBlue to-supportLavender text-white shadow-lg'
+                : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
             }`}
           >
             Learn
@@ -287,8 +594,8 @@ export default function DaysPage() {
             onClick={() => setMode('practice')}
             className={`px-6 py-2 rounded-lg font-medium transition-colors ${
               mode === 'practice'
-                ? 'bg-kurdish-red text-white shadow-lg'
-                : 'bg-white text-gray-600 hover:bg-gray-50'
+                ? 'bg-gradient-to-r from-primaryBlue to-supportLavender text-white shadow-lg'
+                : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
             }`}
           >
             Practice
@@ -332,7 +639,7 @@ export default function DaysPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
-              className="card p-5"
+              className="card p-6"
             >
               {/* Kurdish Day Name - Center */}
               <div className="text-xl font-bold text-gray-800 text-center mb-2">
@@ -342,17 +649,17 @@ export default function DaysPage() {
               {/* English Translation - Center */}
               <div className="text-gray-600 text-center mb-4">{day.en}</div>
               
-              {/* Bottom Row: Audio Button (Left) + Description (Right) */}
-              <div className="flex items-center justify-between">
+              {/* Bottom Row: Audio Button + Description on same line */}
+              <div className="flex items-center gap-2">
                 <AudioButton 
                   kurdishText={day.ku} 
                   phoneticText={day.en.toUpperCase()} 
                   label="Listen" 
                   size="small"
                   audioFile={`/audio/kurdish-tts-mp3/days/${getDayAudioFile(day.ku)}.mp3`}
-                  onPlay={handleAudioPlay}
+                  onPlay={() => handleAudioPlay(`day-${day.ku}`)}
                 />
-                <div className="text-xs text-gray-500">{day.description}</div>
+                <span className="text-[11px] text-gray-500 whitespace-nowrap">{day.description}</span>
               </div>
             </motion.div>
           ))}
@@ -429,7 +736,7 @@ export default function DaysPage() {
                     label="Listen" 
                     size="small"
                     audioFile={`/audio/kurdish-tts-mp3/days/${phrase.filename}`}
-                    onPlay={handleAudioPlay}
+                    onPlay={() => handleAudioPlay(`time-phrase-${phrase.filename}`)}
                   />
                 </div>
               ))}
@@ -465,7 +772,7 @@ export default function DaysPage() {
                     label="Listen" 
                     size="small"
                     audioFile={`/audio/kurdish-tts-mp3/days/${phrase.filename}`}
-                    onPlay={handleAudioPlay}
+                    onPlay={() => handleAudioPlay(`week-phrase-${phrase.filename}`)}
                   />
                 </div>
               ))}
@@ -501,7 +808,7 @@ export default function DaysPage() {
                     label="Listen" 
                     size="small"
                     audioFile={`/audio/kurdish-tts-mp3/days/${phrase.filename}`}
-                    onPlay={handleAudioPlay}
+                    onPlay={() => handleAudioPlay(`day-phrase-${phrase.filename}`)}
                   />
                 </div>
               ))}
@@ -539,7 +846,7 @@ export default function DaysPage() {
                     label="Listen" 
                     size="small"
                     audioFile={`/audio/kurdish-tts-mp3/days/${example.filename}`}
-                    onPlay={handleAudioPlay}
+                    onPlay={() => handleAudioPlay(`example-${example.filename}`)}
                   />
                 </div>
               ))}
@@ -752,7 +1059,7 @@ export default function DaysPage() {
             )}
           </motion.div>
         )}
-      </div>
+      </PageContainer>
     </div>
   )
 }

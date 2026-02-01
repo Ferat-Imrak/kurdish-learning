@@ -13,6 +13,12 @@ const nextConfig = {
   images: {
     domains: ['localhost', 'supabase.co'],
   },
+  async redirects() {
+    return [
+      { source: '/games/picture-quiz', destination: '/games/translation-quiz', permanent: true },
+      { source: '/games/picture-quiz/:path*', destination: '/games/translation-quiz/:path*', permanent: true },
+    ]
+  },
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {

@@ -1,10 +1,15 @@
 "use client"
 
-import Link from "next/link"
+import PageContainer from "../../../components/PageContainer"
+import BackLink from "../../../components/BackLink"
 import { motion } from "framer-motion"
-import { useState } from "react"
-import { Apple, Coffee, Circle, Triangle, ArrowLeft } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
+import { Apple, Coffee, Circle, Triangle } from "lucide-react"
 import AudioButton from "../../../components/lessons/AudioButton"
+import { useProgress } from "../../../contexts/ProgressContext"
+import { restoreRefsFromProgress } from "../../../lib/progressHelper"
+
+const LESSON_ID = '7' // Food & Meals lesson ID
 
 // Helper function to sanitize Kurdish text for filename lookup (same as AudioButton)
 function getAudioFilename(text: string): string {
@@ -141,11 +146,198 @@ const responses = [
   { ku: "Ez ji xwe re dixwazim", en: "I want it for myself", audioFile: "/audio/kurdish-tts-mp3/food/ez-ji-xwe-re-dixwazim.mp3" },
 ]
 
+// Progress configuration
+const progressConfig = {
+  totalAudios: 83, // 53 food items + 3 meal times + 8 food questions + 19 responses
+  hasPractice: false,
+  audioWeight: 50,
+  timeWeight: 50,
+  audioMultiplier: 100 / 83, // ~1.20% per audio
+}
+
 export default function FoodPage() {
+  const { getLessonProgress, updateLessonProgress } = useProgress()
+  
+  // Refs for progress tracking
+  const startTimeRef = useRef<number>(Date.now())
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set())
+  const baseAudioPlaysRef = useRef<number>(0)
+  const refsInitializedRef = useRef<boolean>(false)
+
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
   const [showAllFoods, setShowAllFoods] = useState(false)
 
   const categories = ["all", "fruit", "vegetable", "protein", "dairy", "grain", "drink"]
+
+  // Calculate progress based on unique audios played and time spent
+  const calculateProgress = (): number => {
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const storedProgress = currentProgress?.progress || 0
+    
+    // Calculate audio contribution
+    const uniqueCount = uniqueAudiosPlayedRef.current.size
+    const audioProgress = Math.min(100, (uniqueCount * progressConfig.audioMultiplier))
+    const audioContribution = (audioProgress / 100) * progressConfig.audioWeight
+    
+    // Calculate time contribution (max 50% from time, requires at least 3 minutes for full time contribution)
+    const baseTimeSpent = currentProgress?.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const timeProgress = Math.min(100, (totalTimeSpent / 3) * 100) // 3 minutes = 100% time contribution
+    const timeContribution = (timeProgress / 100) * progressConfig.timeWeight
+    
+    // Combined progress
+    const calculatedProgress = Math.round(audioContribution + timeContribution)
+    
+    // Special case: if all audios are played and at least 3 minutes spent, force 100%
+    if (uniqueCount >= progressConfig.totalAudios && totalTimeSpent >= 3) {
+      return 100
+    }
+    
+    // Prevent progress from decreasing
+    return Math.max(storedProgress, calculatedProgress)
+  }
+
+  // Handle audio play - track unique audios
+  const handleAudioPlay = (audioKey: string) => {
+    // Track unique audios played (only count new ones) - check BEFORE adding
+    if (uniqueAudiosPlayedRef.current.has(audioKey)) {
+      // Already played this audio, don't update progress
+      console.log('🔇 Audio already played, skipping:', audioKey)
+      return
+    }
+    
+    console.log('🔊 New unique audio played:', audioKey, 'Total unique:', uniqueAudiosPlayedRef.current.size + 1)
+    uniqueAudiosPlayedRef.current.add(audioKey)
+    
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress?.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const safeTimeSpent = Math.min(1000, totalTimeSpent)
+    
+    const progress = calculateProgress()
+    
+    // Set status to COMPLETED when progress reaches 100%, otherwise preserve existing status or set to IN_PROGRESS
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress?.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS')
+    
+    console.log('📊 Progress update:', {
+      progress,
+      status,
+      uniqueAudios: uniqueAudiosPlayedRef.current.size,
+      audioKey,
+    })
+    
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent)
+  }
+
+  // Initial setup: restore refs from stored progress and mark lesson as in progress
+  useEffect(() => {
+    if (refsInitializedRef.current) {
+      return
+    }
+
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Mark lesson as IN_PROGRESS if not already completed
+    if (currentProgress?.status === 'NOT_STARTED') {
+      updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS')
+    }
+    
+    // Restore refs from stored progress (only once)
+    if (currentProgress) {
+      const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig)
+      startTimeRef.current = estimatedStartTime
+      
+      // Only restore baseAudioPlaysRef if progress is significant (>20%)
+      if (currentProgress.progress > 20) {
+        baseAudioPlaysRef.current = Math.min(estimatedAudioPlays, progressConfig.totalAudios)
+      } else {
+        baseAudioPlaysRef.current = 0
+        console.log('🔄 Progress is low (<20%), resetting baseAudioPlaysRef to 0 for accurate tracking')
+      }
+      
+      // Safety check: if baseAudioPlaysRef is already at or near totalAudios, reset it
+      if (baseAudioPlaysRef.current >= progressConfig.totalAudios - 2) {
+        console.warn('⚠️ baseAudioPlaysRef is too high, resetting to 0 to prevent progress jump')
+        baseAudioPlaysRef.current = 0
+      }
+      
+      // Check if progress is 100% but status is not COMPLETED
+      if (currentProgress.progress >= 100 && currentProgress.status !== 'COMPLETED') {
+        console.log('✅ Progress is 100% but status is not COMPLETED, updating status...')
+        updateLessonProgress(LESSON_ID, currentProgress.progress, 'COMPLETED', undefined, currentProgress.timeSpent)
+      }
+      
+      console.log('✅ Restored progress refs for Food & Meals:', {
+        baseAudioPlays: baseAudioPlaysRef.current,
+        uniqueAudios: uniqueAudiosPlayedRef.current.size,
+        startTime: new Date(startTimeRef.current).toISOString(),
+      })
+    }
+    
+    refsInitializedRef.current = true
+  }, []) // Empty dependency array - only run once on mount
+
+  // Recovery check: ensure progress consistency on mount and visibility changes
+  useEffect(() => {
+    const checkProgress = () => {
+      const currentProgress = getLessonProgress(LESSON_ID)
+      if (!currentProgress) return
+      
+      const progress = calculateProgress()
+      const storedProgress = currentProgress.progress || 0
+      
+      // If calculated progress is higher, update it
+      if (progress > storedProgress) {
+        const baseTimeSpent = currentProgress.timeSpent || 0
+        const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+        const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+        const safeTimeSpent = Math.min(1000, totalTimeSpent)
+        
+        const status = progress >= 100 ? 'COMPLETED' : (currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS')
+        updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent)
+      }
+    }
+    
+    checkProgress()
+    
+    // Also check when page becomes visible (user returns to tab)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkProgress()
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [getLessonProgress, updateLessonProgress, calculateProgress])
+
+  // Periodic progress update based on time spent
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const currentProgress = getLessonProgress(LESSON_ID)
+      if (!currentProgress || currentProgress.status === 'COMPLETED') return
+      
+      const progress = calculateProgress()
+      const storedProgress = currentProgress.progress || 0
+      
+      // Only update if progress increased
+      if (progress > storedProgress) {
+        const baseTimeSpent = currentProgress.timeSpent || 0
+        const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+        const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+        const safeTimeSpent = Math.min(1000, totalTimeSpent)
+        
+        const status = progress >= 100 ? 'COMPLETED' : 'IN_PROGRESS'
+        updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent)
+      }
+    }, 30000) // Update every 30 seconds
+    
+    return () => clearInterval(interval)
+  }, [getLessonProgress, updateLessonProgress, calculateProgress])
   
   const filteredFoods = selectedCategory === "all" 
     ? foodItemsWithAudio // Show all items when "All" is selected
@@ -155,16 +347,9 @@ export default function FoodPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
-      <div className="container mx-auto px-4 py-6">
-        <div className="mb-6">
-          <Link href="/learn" className="text-kurdish-red font-bold flex items-center gap-2 mb-4">
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </Link>
-          <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center">Food & Meals</h1>
-        </div>
-
-        <p className="text-gray-700 mb-6">Learn food vocabulary and how to talk about meals and preferences in Kurdish.</p>
+      <PageContainer>
+        <BackLink />
+        <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center mb-6">Food & Meals</h1>
 
         {/* Food Categories Filter */}
         <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className="card p-6 mb-6">
@@ -188,10 +373,6 @@ export default function FoodPage() {
 
         {/* Food Items */}
         <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className="card p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <span className="text-2xl">🍎</span>
-            Food Items
-          </h2>
           <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {displayedFoods.map((item, index) => (
               <motion.div key={index} initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className="card p-5">
@@ -202,8 +383,9 @@ export default function FoodPage() {
                     kurdishText={item.ku} 
                     phoneticText={item.en.toUpperCase()} 
                     label="Listen"
-                    size="medium"
+                    size="small"
                     audioFile={item.audioFile}
+                    onPlay={(audioKey) => handleAudioPlay(audioKey || `food-${item.ku}`)}
                   />
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-100 to-yellow-200 flex items-center justify-center shadow">
                     <span className="text-xl">{item.icon}</span>
@@ -259,6 +441,7 @@ export default function FoodPage() {
                     label="Listen"
                     size="small"
                     audioFile={item.audioFile}
+                    onPlay={(audioKey) => handleAudioPlay(audioKey || `meal-${item.ku}`)}
                   />
                 </div>
               </div>
@@ -284,8 +467,9 @@ export default function FoodPage() {
                     kurdishText={item.ku} 
                     phoneticText={item.en.toUpperCase()} 
                     label="Listen"
-                    size="medium"
+                    size="small"
                     audioFile={item.audioFile}
+                    onPlay={(audioKey) => handleAudioPlay(audioKey || `question-${index}-${item.ku}`)}
                   />
                 </div>
               </div>
@@ -311,13 +495,14 @@ export default function FoodPage() {
                     label="Listen"
                     size="small"
                     audioFile={item.audioFile}
+                    onPlay={(audioKey) => handleAudioPlay(audioKey || `response-${index}-${item.ku}`)}
                   />
                 </div>
               </div>
             ))}
           </div>
         </motion.div>
-      </div>
+      </PageContainer>
     </div>
   )
 }

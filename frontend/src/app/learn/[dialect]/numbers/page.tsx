@@ -1,11 +1,13 @@
 "use client"
 
-import Link from "next/link"
+import PageContainer from "../../../../components/PageContainer"
+import BackLink from "../../../../components/BackLink"
 import { motion } from "framer-motion"
-import { useState, useEffect } from "react"
-import { ChevronDown, ChevronUp, ArrowLeft, Calculator, BookOpen, Shuffle, CheckCircle2, XCircle, RotateCcw, ChevronRight } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
+import { ChevronDown, ChevronUp, Calculator, BookOpen, Shuffle, CheckCircle2, XCircle, RotateCcw, ChevronRight } from "lucide-react"
 import AudioButton from "../../../../components/lessons/AudioButton"
 import { useProgress } from "../../../../contexts/ProgressContext"
+import { restoreRefsFromProgress } from "../../../../lib/progressHelper"
 
 const LESSON_ID = '2' // Numbers lesson ID
 
@@ -123,6 +125,26 @@ const generateMathProblem = () => {
 export default function NumbersPage({ params }: { params: { dialect: string } }) {
   const { updateLessonProgress, getLessonProgress } = useProgress()
   
+  // Progress tracking refs - will be restored from stored progress
+  const progressConfig = {
+    totalAudios: 45, // 37 numbers (19 basic + 9 key + 9 compound) + 8 examples
+    hasPractice: true,
+    audioWeight: 30,
+    timeWeight: 20,
+    practiceWeight: 50,
+    audioMultiplier: 0.67, // 30% / 45 audios ≈ 0.67% per audio
+  }
+  
+  // Initialize refs - will be restored in useEffect
+  const storedProgress = getLessonProgress(LESSON_ID)
+  const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig)
+  const startTimeRef = useRef<number>(estimatedStartTime)
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set())
+  // Base audio plays estimated from stored progress
+  const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays)
+  // Track if refs have been initialized to prevent re-initialization on re-renders
+  const refsInitializedRef = useRef(false)
+  
   // Mode state with localStorage persistence
   const [mode, setMode] = useState<'learn' | 'practice'>(() => {
     if (typeof window !== 'undefined') {
@@ -138,13 +160,67 @@ export default function NumbersPage({ params }: { params: { dialect: string } })
     }
   }, [mode])
 
-  // Mark lesson as in progress on mount
+  // Initialize refs from stored progress - ONLY ONCE on mount
   useEffect(() => {
+    // Only initialize refs once on mount, not on every re-render
+    if (refsInitializedRef.current) {
+      return
+    }
+
     const progress = getLessonProgress(LESSON_ID)
+    console.log('🚀 Numbers page mounted, initial progress:', {
+      progress: progress.progress,
+      status: progress.status,
+      score: progress.score,
+      timeSpent: progress.timeSpent,
+    })
+    
+    // Mark lesson as in progress on mount
     if (progress.status === 'NOT_STARTED') {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS')
     }
-  }, [getLessonProgress, updateLessonProgress])
+    
+    // Restore refs from stored progress - ONLY ONCE on mount
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig)
+    startTimeRef.current = estimatedStartTime
+    
+    // Only restore baseAudioPlaysRef if progress is significant (>20%)
+    // Otherwise, reset to 0 to avoid inflating counts from small progress values
+    if (currentProgress.progress > 20) {
+      baseAudioPlaysRef.current = Math.min(estimatedAudioPlays, progressConfig.totalAudios)
+    } else {
+      baseAudioPlaysRef.current = 0
+      console.log('🔄 Progress is low (<20%), resetting baseAudioPlaysRef to 0 for accurate tracking')
+    }
+    
+    // Safety check: if baseAudioPlaysRef is already at or near totalAudios, reset it
+    if (baseAudioPlaysRef.current >= progressConfig.totalAudios - 2) {
+      console.warn('⚠️ baseAudioPlaysRef is too high, resetting to 0 to prevent progress jump')
+      baseAudioPlaysRef.current = 0
+    }
+    
+    // Mark refs as initialized to prevent re-initialization
+    refsInitializedRef.current = true
+    
+    console.log('🔄 Restored refs (ONCE on mount):', {
+      storedProgress: currentProgress.progress,
+      estimatedAudioPlays,
+      baseAudioPlaysRef: baseAudioPlaysRef.current,
+      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
+      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
+    })
+    
+    // Check if practice was already completed (score exists) but progress doesn't reflect it
+    // This will be handled by a separate useEffect after calculateProgress is defined
+    // But also check here if score >= 70 and progress < 100, we need to fix it
+    if (currentProgress.score !== undefined && currentProgress.score >= 70 && currentProgress.progress < 100) {
+      console.log('🔍 Practice score >= 70 but progress is not 100%, will recalculate after calculateProgress is defined...', {
+        storedProgress: currentProgress.progress,
+        storedScore: currentProgress.score,
+      })
+    }
+  }, []) // Empty dependency array - only run once on mount
   
   const [showAll, setShowAll] = useState(false)
   const [mathProblem, setMathProblem] = useState(generateMathProblem())
@@ -153,6 +229,8 @@ export default function NumbersPage({ params }: { params: { dialect: string } })
   const [currentQuestion, setCurrentQuestion] = useState(1)
   const [mathScore, setMathScore] = useState({ correct: 0, total: 0 })
   const [mathQuizCompleted, setMathQuizCompleted] = useState(false)
+  const [mathQuizPassed, setMathQuizPassed] = useState(false)
+  const [mathQuizScore, setMathQuizScore] = useState<number | undefined>(undefined)
   const [practiceGame, setPracticeGame] = useState<'math' | 'matching'>('math')
   
   // Matching game state
@@ -162,6 +240,9 @@ export default function NumbersPage({ params }: { params: { dialect: string } })
   const [selectedMatch, setSelectedMatch] = useState<{ type: 'digit' | 'ku'; value: number | string } | null>(null)
   const [matchScore, setMatchScore] = useState({ correct: 0, total: 0 })
   const [incorrectMatches, setIncorrectMatches] = useState<Array<{ type: 'digit' | 'ku'; value: number | string }>>([])
+  const [matchingGameCompleted, setMatchingGameCompleted] = useState(false)
+  const [matchingGamePassed, setMatchingGamePassed] = useState(false)
+  const [matchingGameScore, setMatchingGameScore] = useState<number | undefined>(undefined)
   
   // Initialize matching game
   const initializeMatchingGame = () => {
@@ -182,6 +263,9 @@ export default function NumbersPage({ params }: { params: { dialect: string } })
     setSelectedMatch(null)
     setMatchScore({ correct: 0, total: 0 })
     setIncorrectMatches([])
+    setMatchingGameCompleted(false)
+    setMatchingGamePassed(false)
+    setMatchingGameScore(undefined)
   }
   
   // Handle matching game selection
@@ -201,10 +285,50 @@ export default function NumbersPage({ params }: { params: { dialect: string } })
           if (pair && pair.digit === digitValue && !pair.matched) {
             // Match found!
             isCorrect = true
-            setMatchingPairs(prev => prev.map(p => 
-              p.digit === digitValue ? { ...p, matched: true } : p
-            ))
-            setMatchScore(prev => ({ correct: prev.correct + 1, total: prev.total + 1 }))
+            // Update matching pairs and calculate score in one go
+            setMatchingPairs(prev => {
+              const updated = prev.map(p => 
+                p.digit === digitValue ? { ...p, matched: true } : p
+              )
+              // Check if all matched after update
+              if (updated.every(p => p.matched) && !matchingGameCompleted) {
+                // Calculate score from current matchScore + this match (since this is correct)
+                setMatchScore(prevScore => {
+                  const updatedScore = { correct: prevScore.correct + 1, total: prevScore.total + 1 }
+                  const currentScore = updatedScore.total > 0 
+                    ? Math.round((updatedScore.correct / updatedScore.total) * 100)
+                    : 100
+                  const isPracticePassed = currentScore >= 70
+                  
+                  console.log('✅ Matching game completed (ku->digit path):', {
+                    correct: updatedScore.correct,
+                    total: updatedScore.total,
+                    score: currentScore,
+                    passed: isPracticePassed,
+                  })
+                  
+                  // Set completion states after state update
+                  console.log('🔧 Setting matching game completion states (ku->digit path)...')
+                  setTimeout(() => {
+                    console.log('⏰ setTimeout callback executing (ku->digit path) - setting matching game states')
+                    setMatchingGameCompleted(true)
+                    setMatchingGamePassed(isPracticePassed)
+                    setMatchingGameScore(currentScore)
+                    console.log('✅ Matching game states set (ku->digit path):', {
+                      matchingGameCompleted: true,
+                      matchingGamePassed: isPracticePassed,
+                      matchingGameScore: currentScore,
+                    })
+                  }, 0)
+                  
+                  return updatedScore
+                })
+              } else {
+                // Update match score for correct match
+                setMatchScore(prev => ({ correct: prev.correct + 1, total: prev.total + 1 }))
+              }
+              return updated
+            })
           } else {
             setMatchScore(prev => ({ ...prev, total: prev.total + 1 }))
             // Show incorrect feedback for both selections
@@ -225,10 +349,50 @@ export default function NumbersPage({ params }: { params: { dialect: string } })
           if (pair && pair.ku === kuValue && !pair.matched) {
             // Match found!
             isCorrect = true
-            setMatchingPairs(prev => prev.map(p => 
-              p.digit === digitValue ? { ...p, matched: true } : p
-            ))
-            setMatchScore(prev => ({ correct: prev.correct + 1, total: prev.total + 1 }))
+            // Update matching pairs and calculate score in one go
+            setMatchingPairs(prev => {
+              const updated = prev.map(p => 
+                p.digit === digitValue ? { ...p, matched: true } : p
+              )
+              // Check if all matched after update
+              if (updated.every(p => p.matched) && !matchingGameCompleted) {
+                // Calculate score from current matchScore + this match (since this is correct)
+                setMatchScore(prevScore => {
+                  const updatedScore = { correct: prevScore.correct + 1, total: prevScore.total + 1 }
+                  const currentScore = updatedScore.total > 0 
+                    ? Math.round((updatedScore.correct / updatedScore.total) * 100)
+                    : 100
+                  const isPracticePassed = currentScore >= 70
+                  
+                  console.log('✅ Matching game completed (digit->ku path):', {
+                    correct: updatedScore.correct,
+                    total: updatedScore.total,
+                    score: currentScore,
+                    passed: isPracticePassed,
+                  })
+                  
+                  // Set completion states after state update
+                  console.log('🔧 Setting matching game completion states (digit->ku path)...')
+                  setTimeout(() => {
+                    console.log('⏰ setTimeout callback executing (digit->ku path) - setting matching game states')
+                    setMatchingGameCompleted(true)
+                    setMatchingGamePassed(isPracticePassed)
+                    setMatchingGameScore(currentScore)
+                    console.log('✅ Matching game states set (digit->ku path):', {
+                      matchingGameCompleted: true,
+                      matchingGamePassed: isPracticePassed,
+                      matchingGameScore: currentScore,
+                    })
+                  }, 0)
+                  
+                  return updatedScore
+                })
+              } else {
+                // Update match score for correct match
+                setMatchScore(prev => ({ correct: prev.correct + 1, total: prev.total + 1 }))
+              }
+              return updated
+            })
           } else {
             setMatchScore(prev => ({ ...prev, total: prev.total + 1 }))
             // Show incorrect feedback for both selections
@@ -246,14 +410,6 @@ export default function NumbersPage({ params }: { params: { dialect: string } })
         
         setSelectedMatch(null)
         setIncorrectMatches([])
-        
-        // Check if all matched
-        if (matchingPairs.every(p => p.matched || (p.digit === (type === 'digit' ? value : selectedMatch.value) && p.ku === (type === 'ku' ? value : selectedMatch.value)))) {
-          const allMatched = matchingPairs.every(p => p.matched)
-          if (allMatched) {
-            updateLessonProgress(LESSON_ID, 100, 'COMPLETED')
-          }
-        }
       } else {
         setSelectedMatch({ type, value })
         setIncorrectMatches([])
@@ -269,6 +425,8 @@ export default function NumbersPage({ params }: { params: { dialect: string } })
     setCurrentQuestion(1)
     setMathScore({ correct: 0, total: 0 })
     setMathQuizCompleted(false)
+    setMathQuizPassed(false)
+    setMathQuizScore(undefined)
   }
   
   // Handle math answer selection
@@ -290,56 +448,412 @@ export default function NumbersPage({ params }: { params: { dialect: string } })
       setSelectedMathAnswer(null)
       setMathFeedback(null)
     } else {
+      // Calculate practice score (math quiz)
+      const currentScore = mathScore.total > 0 
+        ? Math.round((mathScore.correct / mathScore.total) * 100)
+        : 100
+      const isPracticePassed = currentScore >= 70
+      
+      console.log('✅ Math quiz completed:', {
+        correct: mathScore.correct,
+        total: mathScore.total,
+        score: currentScore,
+        passed: isPracticePassed,
+      })
+      
+      console.log('🔧 Setting math quiz completion states...')
       setMathQuizCompleted(true)
-      updateLessonProgress(LESSON_ID, 100, 'COMPLETED')
+      setMathQuizPassed(isPracticePassed)
+      setMathQuizScore(currentScore)
+      console.log('✅ Math quiz states set:', {
+        mathQuizCompleted: true,
+        mathQuizPassed: isPracticePassed,
+        mathQuizScore: currentScore,
+      })
+      // Don't update progress here - wait for both games to complete
     }
   }
   
   // Initialize matching game and math quiz on mount and when switching to practice mode
+  // BUT don't reset completion states if games are already completed
   useEffect(() => {
     if (mode === 'practice') {
-      initializeMatchingGame()
-      initializeMathQuiz()
+      // Only initialize if games aren't already completed
+      if (!matchingGameCompleted) {
+        initializeMatchingGame()
+      }
+      if (!mathQuizCompleted) {
+        initializeMathQuiz()
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, practiceGame])
+  
+  // Restore practice completion states from stored progress on mount
+  useEffect(() => {
+    const currentProgress = getLessonProgress(LESSON_ID)
+    if (currentProgress.score !== undefined) {
+      // Practice was completed - restore the states
+      // We can't restore individual game scores, but we can mark both as completed
+      // if the overall score exists (meaning both were completed)
+      console.log('🔄 Restoring practice completion states from stored progress:', {
+        score: currentProgress.score,
+      })
+      // If score exists, both games were completed
+      // Set both as completed with estimated scores
+      if (!mathQuizCompleted) {
+        setMathQuizCompleted(true)
+        setMathQuizPassed(currentProgress.score >= 70)
+        setMathQuizScore(currentProgress.score) // Use overall score as estimate
+      }
+      if (!matchingGameCompleted) {
+        setMatchingGameCompleted(true)
+        setMatchingGamePassed(currentProgress.score >= 70)
+        setMatchingGameScore(currentProgress.score) // Use overall score as estimate
+      }
+    }
+  }, []) // Run once on mount
+
+  // Use useEffect to watch for both games being completed
+  useEffect(() => {
+    console.log('🔍 Practice completion useEffect triggered:', {
+      mathQuizCompleted,
+      matchingGameCompleted,
+      mathQuizScore,
+      matchingGameScore,
+      mathQuizPassed,
+      matchingGamePassed,
+      allConditionsMet: mathQuizCompleted && matchingGameCompleted && mathQuizScore !== undefined && matchingGameScore !== undefined,
+    })
+    
+    if (mathQuizCompleted && matchingGameCompleted && mathQuizScore !== undefined && matchingGameScore !== undefined) {
+      // Both games completed - calculate combined practice score
+      const combinedScore = (mathQuizScore + matchingGameScore) / 2
+      const isPracticePassed = mathQuizPassed && matchingGamePassed && combinedScore >= 70
+      
+      console.log('🎯 Both practice games completed - calculating progress:', {
+        mathQuizScore,
+        matchingGameScore,
+        combinedScore,
+        mathQuizPassed,
+        matchingGamePassed,
+        isPracticePassed,
+      })
+      
+      // Calculate total time spent (base + session)
+      const currentProgress = getLessonProgress(LESSON_ID)
+      console.log('📊 Current stored progress before calculation:', {
+        progress: currentProgress.progress,
+        status: currentProgress.status,
+        score: currentProgress.score,
+        timeSpent: currentProgress.timeSpent,
+      })
+      
+      const baseTimeSpent = currentProgress?.timeSpent || 0
+      const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+      const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+      const safeTimeSpent = Math.min(1000, totalTimeSpent)
+      
+      console.log('⏱️ Time calculation:', {
+        baseTimeSpent,
+        sessionTimeMinutes,
+        totalTimeSpent,
+        safeTimeSpent,
+      })
+      
+      // Use the practice score to calculate progress - this should give full practice credit
+      console.log('🧮 Calling calculateProgress with combinedScore:', combinedScore)
+      const progress = calculateProgress(combinedScore)
+      const status = isPracticePassed ? 'COMPLETED' : 'IN_PROGRESS'
+      
+      console.log('💾 Updating lesson progress after practice completion:', {
+        calculatedProgress: progress,
+        status,
+        combinedScore,
+        isPracticePassed,
+        mathQuizScore,
+        matchingGameScore,
+        storedProgress: currentProgress.progress,
+      })
+      
+      // Update progress with practice score
+      updateLessonProgress(LESSON_ID, progress, status, combinedScore, safeTimeSpent)
+      
+      // Verify the update
+      setTimeout(() => {
+        const updatedProgress = getLessonProgress(LESSON_ID)
+        console.log('✅ Progress update verified:', {
+          updatedProgress: updatedProgress.progress,
+          updatedStatus: updatedProgress.status,
+          updatedScore: updatedProgress.score,
+        })
+      }, 100)
+    } else {
+      console.log('⏳ Waiting for both games to complete...', {
+        mathQuizCompleted,
+        matchingGameCompleted,
+        mathQuizScore: mathQuizScore !== undefined ? mathQuizScore : 'undefined',
+        matchingGameScore: matchingGameScore !== undefined ? matchingGameScore : 'undefined',
+        missingConditions: {
+          mathQuizCompleted: !mathQuizCompleted,
+          matchingGameCompleted: !matchingGameCompleted,
+          mathQuizScore: mathQuizScore === undefined,
+          matchingGameScore: matchingGameScore === undefined,
+        },
+      })
+    }
+  }, [mathQuizCompleted, matchingGameCompleted, mathQuizScore, matchingGameScore, mathQuizPassed, matchingGamePassed])
+  
+  // Check if practice was already completed (score exists) but progress doesn't reflect it
+  // Also check if both games are completed but progress wasn't updated
+  useEffect(() => {
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Case 1: Practice score exists and >= 70, but progress is not 100% - FORCE to 100%
+    if (currentProgress.score !== undefined && currentProgress.score >= 70 && currentProgress.progress < 100) {
+      console.log('🔍 Practice score >= 70 but progress is not 100%, forcing to 100%...', {
+        storedProgress: currentProgress.progress,
+        storedScore: currentProgress.score,
+      })
+      
+      // Force progress to 100% when practice is completed (score >= 70)
+      const shouldBeCompleted = currentProgress.score >= 70
+      const newStatus = shouldBeCompleted ? 'COMPLETED' : currentProgress.status
+      
+      console.log('🔄 Forcing progress to 100% because practice score >= 70:', {
+        newProgress: 100,
+        newStatus,
+        storedScore: currentProgress.score,
+        oldProgress: currentProgress.progress,
+      })
+      
+      // Always update to 100% if score >= 70
+      updateLessonProgress(LESSON_ID, 100, newStatus, currentProgress.score, currentProgress.timeSpent)
+    }
+    
+    // Case 2: Both games are completed but no score was stored - force update
+    if (mathQuizCompleted && matchingGameCompleted && mathQuizScore !== undefined && matchingGameScore !== undefined && currentProgress.score === undefined) {
+      console.log('🚨 Both games completed but score not stored! Forcing update...', {
+        mathQuizScore,
+        matchingGameScore,
+        currentProgress,
+      })
+      
+      const combinedScore = (mathQuizScore + matchingGameScore) / 2
+      const isPracticePassed = mathQuizPassed && matchingGamePassed && combinedScore >= 70
+      
+      const baseTimeSpent = currentProgress?.timeSpent || 0
+      const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+      const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+      const safeTimeSpent = Math.min(1000, totalTimeSpent)
+      
+      const progress = calculateProgress(combinedScore)
+      const status = isPracticePassed ? 'COMPLETED' : 'IN_PROGRESS'
+      
+      console.log('💾 Force updating lesson progress:', {
+        progress,
+        status,
+        combinedScore,
+        isPracticePassed,
+      })
+      
+      updateLessonProgress(LESSON_ID, progress, status, combinedScore, safeTimeSpent)
+    }
+  }, [mathQuizCompleted, matchingGameCompleted, mathQuizScore, matchingGameScore, mathQuizPassed, matchingGamePassed])
+  
+  // Also check on page visibility change (when user comes back to tab)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const currentProgress = getLessonProgress(LESSON_ID)
+        // If both games are completed but progress is low, force update
+        if (mathQuizCompleted && matchingGameCompleted && mathQuizScore !== undefined && matchingGameScore !== undefined) {
+          if (currentProgress.progress < 80 || currentProgress.score === undefined) {
+            console.log('👁️ Page visible - checking practice completion status...')
+            const combinedScore = (mathQuizScore + matchingGameScore) / 2
+            const isPracticePassed = mathQuizPassed && matchingGamePassed && combinedScore >= 70
+            
+            const baseTimeSpent = currentProgress?.timeSpent || 0
+            const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+            const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+            const safeTimeSpent = Math.min(1000, totalTimeSpent)
+            
+            const progress = calculateProgress(combinedScore)
+            const status = isPracticePassed ? 'COMPLETED' : 'IN_PROGRESS'
+            
+            console.log('💾 Visibility change - updating lesson progress:', {
+              progress,
+              status,
+              combinedScore,
+              currentProgress: currentProgress.progress,
+            })
+            
+            updateLessonProgress(LESSON_ID, progress, status, combinedScore, safeTimeSpent)
+          }
+        }
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [mathQuizCompleted, matchingGameCompleted, mathQuizScore, matchingGameScore, mathQuizPassed, matchingGamePassed])
+  
+  // Listen for progress updates (including from backend sync) and fix if needed
+  useEffect(() => {
+    const handleProgressUpdate = () => {
+      const currentProgress = getLessonProgress(LESSON_ID)
+      // If practice score >= 70 but progress is not 100%, force it to 100%
+      if (currentProgress.score !== undefined && currentProgress.score >= 70 && currentProgress.progress < 100) {
+        console.log('🔧 Progress update detected - fixing progress to 100% (score >= 70)')
+        updateLessonProgress(LESSON_ID, 100, 'COMPLETED', currentProgress.score, currentProgress.timeSpent)
+      }
+    }
+    
+    window.addEventListener('lessonProgressUpdated', handleProgressUpdate)
+    return () => window.removeEventListener('lessonProgressUpdated', handleProgressUpdate)
+  }, [getLessonProgress, updateLessonProgress])
   
   // Show numbers 1-19, key numbers (20, 30, 40, 50, 60, 70, 80, 90, 100), and compound numbers (21-29)
   const selectedNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 40, 50, 60, 70, 80, 90, 100]
   const displayedNumbers = showAll ? selectedNumbers : selectedNumbers.slice(0, 20)
 
-  const handleAudioPlay = () => {
-    const progress = getLessonProgress(LESSON_ID)
-    const newProgress = Math.min(100, progress.progress + 2)
-    updateLessonProgress(LESSON_ID, newProgress, 'IN_PROGRESS')
+  const calculateProgress = (practiceScore?: number) => {
+    // Get current progress to access latest timeSpent
+    const currentProgress = getLessonProgress(LESSON_ID)
+    const storedProgress = currentProgress?.progress || 0
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress?.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    
+    // Calculate progress from ACTUAL STATE, not from stored baseProgress
+    
+    // 1. Audio progress: Calculate from total unique audios played (base + new)
+    const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size
+    const effectiveUniqueAudios = Math.min(totalUniqueAudios, progressConfig.totalAudios)
+    const audioProgress = Math.min(30, (effectiveUniqueAudios / progressConfig.totalAudios) * 30)
+    
+    // 2. Time progress: Calculate from total time spent (max 20%, 4 minutes = 20%)
+    const timeProgress = Math.min(20, totalTimeSpent * 5)
+    
+    // 3. Practice progress: Calculate from practice score (max 50%)
+    let practiceProgress = 0
+    if (progressConfig.hasPractice) {
+      if (practiceScore !== undefined) {
+        practiceProgress = Math.min(50, (practiceScore / 100) * 50)
+        console.log('🎯 Practice progress calculated from provided score:', {
+          practiceScore,
+          practiceProgress,
+          formula: `(${practiceScore} / 100) * 50 = ${practiceProgress}`,
+        })
+      } else if (currentProgress.score !== undefined) {
+        // Use stored practice score if available
+        practiceProgress = Math.min(50, (currentProgress.score / 100) * 50)
+        console.log('🎯 Practice progress calculated from stored score:', {
+          storedScore: currentProgress.score,
+          practiceProgress,
+          formula: `(${currentProgress.score} / 100) * 50 = ${practiceProgress}`,
+        })
+      } else {
+        console.log('⚠️ No practice score available (neither provided nor stored)')
+      }
+    }
+    
+    // 4. Total progress = audio + time + practice (capped at 100%)
+    let calculatedProgress = Math.round(Math.min(100, audioProgress + timeProgress + practiceProgress))
+    
+    // SPECIAL CASE: If practice is completed (score >= 70), ensure progress is at least 100%
+    // This handles cases where audio/time weren't tracked but practice was completed
+    if (practiceScore !== undefined && practiceScore >= 70) {
+      calculatedProgress = 100
+      console.log('🎯 Practice passed (>=70%), setting progress to 100%')
+    } else if (currentProgress.score !== undefined && currentProgress.score >= 70) {
+      calculatedProgress = 100
+      console.log('🎯 Stored practice score passed (>=70%), setting progress to 100%')
+    }
+    
+    // IMPORTANT: Never decrease progress - always use the maximum of stored and calculated
+    // This prevents progress from dropping when refs are reset or recalculated
+    const totalProgress = Math.max(storedProgress, calculatedProgress)
+    
+    console.log('📊 Progress calculation (from state):', {
+      storedProgress,
+      totalUniqueAudios,
+      effectiveUniqueAudios,
+      audioProgress: audioProgress.toFixed(2),
+      totalTimeSpent,
+      timeProgress: timeProgress.toFixed(2),
+      practiceScore: practiceScore !== undefined ? practiceScore : 'undefined',
+      practiceProgress: practiceProgress.toFixed(2),
+      calculatedProgress,
+      totalProgress,
+      breakdown: {
+        audio: audioProgress.toFixed(2),
+        time: timeProgress.toFixed(2),
+        practice: practiceProgress.toFixed(2),
+        sum: (audioProgress + timeProgress + practiceProgress).toFixed(2),
+      },
+    })
+    
+    return totalProgress
   }
+
+  const handleAudioPlay = (audioKey: string) => {
+    // Track unique audios played (only count new ones) - check BEFORE adding
+    if (uniqueAudiosPlayedRef.current.has(audioKey)) {
+      // Already played this audio, don't update progress
+      console.log('🔇 Audio already played, skipping:', audioKey)
+      return
+    }
+    
+    console.log('🔊 New unique audio played:', audioKey, 'Total unique:', uniqueAudiosPlayedRef.current.size + 1)
+    uniqueAudiosPlayedRef.current.add(audioKey)
+    
+    const currentProgress = getLessonProgress(LESSON_ID)
+    
+    // Calculate total time spent (base + session)
+    const baseTimeSpent = currentProgress.timeSpent || 0
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+    const safeTimeSpent = Math.min(1000, totalTimeSpent)
+    
+    // Don't pass practiceScore - we're just playing audio, not doing practice
+    const progress = calculateProgress(undefined)
+    const status = currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS'
+    
+    console.log('📊 Progress update:', {
+      progress,
+      uniqueAudios: uniqueAudiosPlayedRef.current.size,
+      audioKey,
+    })
+    
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent)
+  }
+
+  const progress = getLessonProgress(LESSON_ID)
+  
+  // Calculate learned count from actual unique audios (includes numbers + examples)
+  const estimatedBaseCount = Math.min(baseAudioPlaysRef.current, progressConfig.totalAudios)
+  const newUniqueAudios = uniqueAudiosPlayedRef.current.size
+  const learnedCount = Math.min(estimatedBaseCount + newUniqueAudios, progressConfig.totalAudios)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
-      <div className="container mx-auto px-4 py-6">
-        <div className="flex items-center justify-between mb-6">
-          <Link href={`/learn`} className="text-kurdish-red font-bold flex items-center gap-2">
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </Link>
-          <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red">
-            Numbers
-          </h1>
-          <div />
-        </div>
-
-        <p className="text-gray-700 mb-6 text-center">
-          Learn Kurdish numbers with pronunciation and number patterns.
-        </p>
+      <PageContainer>
+        <BackLink />
+        <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center mb-6">
+          Numbers
+        </h1>
 
         {/* Mode Toggle */}
-        <div className="flex justify-center gap-2 mb-6">
+        <div className="flex justify-center gap-2 mb-8">
           <button
             onClick={() => setMode('learn')}
             className={`px-6 py-2 rounded-lg font-medium transition-colors ${
               mode === 'learn'
-                ? 'bg-kurdish-red text-white shadow-lg'
-                : 'bg-white text-gray-600 hover:bg-gray-50'
+                ? 'bg-gradient-to-r from-primaryBlue to-supportLavender text-white shadow-lg'
+                : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
             }`}
           >
             Learn
@@ -348,7 +862,7 @@ export default function NumbersPage({ params }: { params: { dialect: string } })
             onClick={() => setMode('practice')}
             className={`px-6 py-2 rounded-lg font-medium transition-colors ${
               mode === 'practice'
-                ? 'bg-kurdish-red text-white shadow-lg'
+                ? 'bg-gradient-to-r from-primaryBlue to-supportLavender text-white shadow-lg'
                 : 'bg-white text-gray-600 hover:bg-gray-50'
             }`}
           >
@@ -379,9 +893,9 @@ export default function NumbersPage({ params }: { params: { dialect: string } })
                       kurdishText={numberData.ku} 
                       phoneticText={numberData.en.toUpperCase()} 
                       label="Listen" 
-                      size="medium"
+                      size="small"
                       audioFile={`/audio/kurdish-tts-mp3/numbers/${getNumberAudioFile(numberData.ku)}.mp3`}
-                      onPlay={handleAudioPlay}
+                      onPlay={() => handleAudioPlay(`number-${n}`)}
                     />
                   ) : (
                     <div className="text-xs text-gray-400">
@@ -488,7 +1002,7 @@ export default function NumbersPage({ params }: { params: { dialect: string } })
                     label="Listen" 
                     size="small"
                     audioFile={example.audioFile}
-                    onPlay={handleAudioPlay}
+                    onPlay={() => handleAudioPlay(`example-${example.number}-${index}`)}
                   />
                 </div>
               </motion.div>
@@ -722,9 +1236,9 @@ export default function NumbersPage({ params }: { params: { dialect: string } })
               <div className="text-sm text-green-600">You matched all numbers correctly!</div>
             </motion.div>
           )}
-        </motion.div>
+          </motion.div>
         )}
-      </div>
+      </PageContainer>
     </div>
   )
 }

@@ -43,3 +43,6 @@ yarn-error.log*
 *.pem
 *.key
 *.cert
+
+# Local backups (not used by app)
+audio-backups/

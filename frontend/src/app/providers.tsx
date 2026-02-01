@@ -3,6 +3,7 @@
 import { SessionProvider, useSession, signOut as nextAuthSignOut } from 'next-auth/react'
 import { Toaster } from 'react-hot-toast'
 import { ProgressProvider } from '../contexts/ProgressContext'
+import { GamesProgressProvider } from '../contexts/GamesProgressContext'
 
 type SimpleUser = { email?: string | null, name?: string | null, image?: string | null }
 
@@ -42,7 +43,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
       <ProgressProvider>
-        {children}
+        <GamesProgressProvider>
+          {children}
+        </GamesProgressProvider>
         <Toaster 
           position="top-center"
           toastOptions={{

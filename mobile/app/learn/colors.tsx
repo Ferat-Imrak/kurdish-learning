@@ -9,11 +9,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+
+const SKY = '#EAF3FF';
+const SKY_DEEPER = '#d6e8ff';
+const TEXT_PRIMARY = '#0F172A';
 import { Audio } from 'expo-av';
 import { Asset } from 'expo-asset';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
+import { restoreRefsFromProgress } from '../../lib/utils/progressHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -136,7 +142,7 @@ const colors: ColorData[] = [
       { ku: "gulê gevez", en: "orange-red flower", icon: "🌺" },
       { ku: "rojê gevez", en: "orange-red sun", icon: "🌅" },
       { ku: "agirê gevez", en: "orange-red fire", icon: "🔥" },
-      { ku: "gulê gevez", en: "orange-red rose", icon: "🌹" }
+      { ku: "kirasê gevez", en: "orange-red dress", icon: "👗" }
     ]
   },
   { 
@@ -231,6 +237,7 @@ const audioAssets: Record<string, any> = {
   'gule-gevez': require('../../assets/audio/colors/gule-gevez.mp3'),
   'roje-gevez': require('../../assets/audio/colors/roje-gevez.mp3'),
   'agire-gevez': require('../../assets/audio/colors/agire-gevez.mp3'),
+  'kirase-gevez': require('../../assets/audio/colors/kirase-gevez.mp3'),
   'pisike-res': require('../../assets/audio/colors/pisike-res.mp3'),
   'pirtuke-res': require('../../assets/audio/colors/pirtuke-res.mp3'),
   'seve-res': require('../../assets/audio/colors/seve-res.mp3'),
@@ -255,8 +262,26 @@ export default function ColorsPage() {
   const [expandedColor, setExpandedColor] = useState<string | null>(null);
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const startTimeRef = useRef<number>(Date.now());
-  const audioPlaysRef = useRef<number>(0);
+  
+  // Progress configuration (no practice section - allow 100% from audio + time)
+  const progressConfig = {
+    totalAudios: 59, // 12 colors + 47 examples
+    hasPractice: false,
+    audioWeight: 50, // 50% from audio (instead of 30% since no practice)
+    timeWeight: 50, // 50% from time (instead of 20% since no practice)
+    audioMultiplier: 0.847, // 50% / 59 audios ≈ 0.847% per audio
+    timeMultiplier: 10, // 50% / 5 minutes = 10% per minute
+  };
+  
+  // Initialize refs - will be restored in useEffect
+  const storedProgress = getLessonProgress(LESSON_ID);
+  const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
+  const startTimeRef = useRef<number>(estimatedStartTime);
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
+  // Base audio plays estimated from stored progress
+  const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
+  // Track previous unique audio count to calculate increment
+  const previousUniqueAudiosCountRef = useRef<number>(0);
 
   // Initialize audio mode
   useEffect(() => {
@@ -273,7 +298,7 @@ export default function ColorsPage() {
     };
   }, [sound]);
 
-  // Mark lesson as in progress on mount
+  // Mark lesson as in progress on mount and restore refs
   useEffect(() => {
     if (!isAuthenticated) {
       router.replace('/' as any);
@@ -284,6 +309,14 @@ export default function ColorsPage() {
     if (progress.status === 'NOT_STARTED') {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS');
     }
+    
+    // Restore refs from stored progress (in case progress was updated after component mount)
+    const currentProgress = getLessonProgress(LESSON_ID);
+    const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig);
+    startTimeRef.current = estimatedStartTime;
+    baseAudioPlaysRef.current = estimatedAudioPlays;
+    
+    // Note: uniqueAudiosPlayedRef starts fresh each session, but we account for base progress
   }, [isAuthenticated]);
 
   const playAudio = async (audioFile: string) => {
@@ -308,8 +341,11 @@ export default function ColorsPage() {
 
       setSound(newSound);
       setPlayingAudio(audioFile);
-      audioPlaysRef.current += 1;
-      handleAudioPlay();
+      // Track unique audios played
+      if (!uniqueAudiosPlayedRef.current.has(audioFile)) {
+        uniqueAudiosPlayedRef.current.add(audioFile);
+        handleAudioPlay();
+      }
 
       newSound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded) {
@@ -325,20 +361,58 @@ export default function ColorsPage() {
   };
 
   const calculateProgress = () => {
-    const timeSpent = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60); // minutes
-    // Audio clicks: max 30% (12 colors + ~45 examples = 57 total, so ~1 click = 0.53%)
-    const audioProgress = Math.min(30, audioPlaysRef.current * 0.53);
-    // Time spent: max 20% (4 minutes = 20%)
-    const timeProgress = Math.min(20, timeSpent * 5);
-    // No practice section, so 0%
-    const practiceProgress = 0;
-    return Math.min(100, audioProgress + timeProgress + practiceProgress);
+    const currentProgress = getLessonProgress(LESSON_ID);
+    const baseProgress = currentProgress.progress || 0;
+    const baseTimeSpent = currentProgress.timeSpent || 0;
+    
+    // Calculate session time (minutes)
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
+    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes;
+    
+    // Safeguard: if baseTimeSpent is unreasonably large, reset to 0
+    const safeBaseTimeSpent = baseTimeSpent > 10000 ? 0 : baseTimeSpent;
+    const safeTotalTimeSpent = safeBaseTimeSpent + sessionTimeMinutes;
+    
+    // Calculate new unique audios played since last update
+    const currentUniqueAudiosCount = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size;
+    const newUniqueAudios = currentUniqueAudiosCount - previousUniqueAudiosCountRef.current;
+    
+    // Calculate total examples for validation
+    const totalExamples = progressConfig.totalAudios; // 59
+    const learnedCount = Math.min(currentUniqueAudiosCount, totalExamples);
+    
+    // If all audios are played, ensure we use the full count for calculation
+    // This fixes the issue where estimated baseAudioPlaysRef is incorrect
+    const effectiveAudioCount = learnedCount >= totalExamples ? totalExamples : currentUniqueAudiosCount;
+    
+    // Calculate progress from current state using NEW weights (50% audio + 50% time)
+    // Audio progress: max 50% (cap at 100% total for audio+time since no practice)
+    const maxAudioTimeProgress = 100; // 50% audio + 50% time = 100% max (no practice)
+    const audioProgress = Math.min(50, effectiveAudioCount * progressConfig.audioMultiplier);
+    const timeProgress = Math.min(50, safeTotalTimeSpent * progressConfig.timeMultiplier);
+    const calculatedProgress = Math.min(maxAudioTimeProgress, audioProgress + timeProgress);
+    
+    // Use the higher of stored progress or calculated progress
+    // This preserves accumulated progress while using correct weights going forward
+    // If stored progress is higher (from old weights), keep it until new calculation exceeds it
+    const totalProgress = Math.max(baseProgress, Math.min(100, calculatedProgress));
+    
+    // Update previous count for next calculation
+    previousUniqueAudiosCountRef.current = currentUniqueAudiosCount;
+    
+    // Final safeguard: ensure timeSpent is reasonable (max 10000 minutes = ~166 hours)
+    // If larger, it's likely corrupted (milliseconds or timestamp) - reset to 0
+    const finalTimeSpent = safeTotalTimeSpent > 10000 ? 0 : safeTotalTimeSpent;
+    
+    return {
+      progress: totalProgress,
+      timeSpent: finalTimeSpent,
+    };
   };
 
   const handleAudioPlay = () => {
-    const currentProgress = getLessonProgress(LESSON_ID);
-    const progress = calculateProgress();
-    updateLessonProgress(LESSON_ID, progress, 'IN_PROGRESS');
+    const { progress, timeSpent } = calculateProgress();
+    updateLessonProgress(LESSON_ID, progress, 'IN_PROGRESS', undefined, timeSpent);
   };
 
   // Process colors to add audioFile paths
@@ -362,47 +436,38 @@ export default function ColorsPage() {
   });
 
   const progress = getLessonProgress(LESSON_ID);
-  // Calculate total examples count for Learn progress (12 colors + ~45 examples = 57)
+  // Calculate total examples count for Learn progress (12 colors + 47 examples = 59)
   const totalExamples = colors.length + colors.reduce((sum, color) => sum + color.examples.length, 0);
-  // Use actual audio plays count, capped at total examples
-  const learnedCount = Math.min(audioPlaysRef.current, totalExamples);
+  // Show accumulated unique audios (base + new in this session)
+  const learnedCount = Math.min(baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size, totalExamples);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Ionicons name="arrow-back" size={24} color="#3A86FF" />
-        </Pressable>
-        <Text style={styles.headerTitle}>Colors</Text>
-        <View style={styles.headerRight} />
-      </View>
+    <View style={styles.pageWrap}>
+      <LinearGradient colors={[SKY, SKY_DEEPER, SKY]} style={StyleSheet.absoluteFill} />
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} style={styles.backHit} hitSlop={8}>
+            <Ionicons name="chevron-back" size={24} color={TEXT_PRIMARY} />
+          </Pressable>
+          <Text style={styles.headerTitle}>Colors</Text>
+          <View style={styles.headerRight} />
+        </View>
 
-      {/* Progress Info */}
-      <View style={styles.progressInfoContainer}>
-        <Text style={styles.progressInfoText}>
-          <Text style={styles.progressInfoLabel}>Progress: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            progress.progress === 100 && styles.progressInfoComplete
-          ]}>
-            {Math.round(progress.progress)}%
-          </Text>
-          <Text style={styles.progressInfoSeparator}> • </Text>
-          <Text style={styles.progressInfoLabel}>Learn: </Text>
-          <Text style={[
-            styles.progressInfoValue,
-            learnedCount === totalExamples && styles.progressInfoComplete
-          ]}>
-            {learnedCount}/{totalExamples}
-          </Text>
-        </Text>
-      </View>
+        <View style={styles.progressBarCard}>
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Progress</Text>
+            <Text style={[styles.progressBarValue, progress.progress === 100 && styles.progressBarComplete]}>
+              {Math.round(progress.progress)}%
+            </Text>
+          </View>
+          <View style={styles.progressBarDivider} />
+          <View style={styles.progressBarSection}>
+            <Text style={styles.progressBarLabel}>Learn</Text>
+            <Text style={[styles.progressBarValue, learnedCount === totalExamples && styles.progressBarComplete]}>
+              {learnedCount}/{totalExamples}
+            </Text>
+          </View>
+        </View>
 
       <ScrollView
         style={styles.scrollView}
@@ -495,67 +560,73 @@ export default function ColorsPage() {
           );
         })}
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
+  pageWrap: { flex: 1 },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    minHeight: 44,
   },
-  backButton: {
-    width: ICON_CONTAINER_WIDTH,
-    height: ICON_CONTAINER_WIDTH,
-    alignItems: 'center',
+  backHit: {
+    width: 44,
+    height: 44,
     justifyContent: 'center',
-    borderRadius: 8,
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '700',
-    color: '#111827',
-    flex: 1,
-    textAlign: 'center',
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.5,
   },
-  headerRight: {
-    width: ICON_CONTAINER_WIDTH,
-  },
-  pressed: {
-    opacity: 0.6,
-  },
-  progressInfoContainer: {
+  headerRight: { width: 44 },
+  progressBarCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
     marginHorizontal: 20,
-    marginTop: 12,
-    marginBottom: 12,
-    paddingVertical: 8,
+    marginTop: 6,
+    marginBottom: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  progressInfoText: {
-    fontSize: 13,
-    color: '#6b7280',
-    textAlign: 'center',
+  progressBarSection: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  progressInfoLabel: {
+  progressBarLabel: {
+    fontSize: 11,
     fontWeight: '500',
+    color: '#6b7280',
+    marginBottom: 1,
   },
-  progressInfoValue: {
+  progressBarValue: {
+    fontSize: 15,
     fontWeight: '700',
     color: '#111827',
   },
-  progressInfoComplete: {
-    color: '#10b981',
-  },
-  progressInfoSeparator: {
-    color: '#9ca3af',
+  progressBarComplete: { color: '#10b981' },
+  progressBarDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#e5e7eb',
   },
   scrollView: {
     flex: 1,

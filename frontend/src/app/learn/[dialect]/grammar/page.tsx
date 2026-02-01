@@ -1,9 +1,10 @@
 "use client"
 
-import Link from "next/link"
+import PageContainer from "../../../../components/PageContainer"
+import BackLink from "../../../../components/BackLink"
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { ArrowLeft, BookOpen, CheckCircle, ChevronDown } from "lucide-react"
+import { BookOpen, CheckCircle, ChevronDown } from "lucide-react"
 import AudioButton from "../../../../components/lessons/AudioButton"
 import { useLessonTracking } from "../../../../hooks/useLessonTracking"
 
@@ -251,21 +252,12 @@ export default function GrammarPage({ params }: { params: { dialect: string } })
   
   return (
     <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
-      <div className="container mx-auto px-4 py-6">
-        <div className="flex items-center justify-between mb-6">
-          <Link href="/learn" className="text-kurdish-red font-bold flex items-center gap-2">
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </Link>
-          <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red">
-            Kurdish Grammar
-          </h1>
-          <div />
-        </div>
+      <PageContainer>
+        <BackLink />
+        <h1 className="text-2xl md:text-3xl font-bold text-kurdish-red text-center mb-6">
+          Kurdish Grammar
+        </h1>
 
-        <p className="text-gray-700 mb-8 text-center max-w-3xl mx-auto">
-          Learn Kurdish grammar fundamentals with audio pronunciation.
-        </p>
 
         {/* Tabs */}
         <div className="flex gap-2 mb-6 justify-center flex-wrap">
@@ -381,7 +373,7 @@ export default function GrammarPage({ params }: { params: { dialect: string } })
                                         kurdishText={example.ku} 
                                         phoneticText={example.en} 
                                         audioFile={'audioFile' in example ? (example as any).audioFile : undefined}
-                                        label="Play" 
+                                        label="Listen" 
                                         size="small"
                                         onPlay={() => recordInteraction(section.id)}
                                       />
@@ -429,7 +421,7 @@ export default function GrammarPage({ params }: { params: { dialect: string } })
             ))}
           </div>
         </motion.div>
-      </div>
+      </PageContainer>
     </div>
   )
 }
