@@ -94,16 +94,16 @@ export default function RegisterPage() {
     setIsLoading(true)
     
     try {
-      // Use backend API directly (not Next.js API route for static export)
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
-      const res = await fetch(`${API_BASE_URL}/auth/register`, {
+      // Use frontend's /api/register (same origin – works on Vercel without a separate backend)
+      const res = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          name: formData.username || formData.name, // Backend expects 'name' field
-          email: formData.email, 
+        body: JSON.stringify({
+          name: formData.name || formData.username,
+          username: formData.username,
+          email: formData.email,
           password: formData.password,
-          plan: selectedPlan // Will be handled by backend
+          plan: selectedPlan,
         }),
       })
       if (!res.ok) {
@@ -112,14 +112,10 @@ export default function RegisterPage() {
       }
 
       const data = await res.json()
-      
-      // Store backend JWT token for API calls (registration returns token)
       if (data.token) {
         localStorage.setItem('auth_token', data.token)
         sessionStorage.setItem('auth_token', data.token)
-        console.log('✅ Backend JWT token stored after registration');
       }
-
       router.push('/auth/login')
     } catch (error: any) {
       setSubmitError(error?.message || 'Failed to create account. Please try again.')

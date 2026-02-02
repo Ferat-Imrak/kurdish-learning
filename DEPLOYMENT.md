@@ -45,11 +45,13 @@ docker-compose exec backend npx prisma db seed
 
 ## 🔧 Environment Setup
 
-### Frontend (.env.local)
+### Frontend (.env.local or Vercel env)
+- **Register on Vercel:** The app uses the frontend’s own `/api/register` (no separate backend needed for sign-up). Set **DATABASE_URL** on Vercel to your Postgres URL so register and NextAuth login work.
+- **Backend base URL (optional):** If you deploy the backend and want progress/games/achievements from it, set **NEXT_PUBLIC_API_URL** = `https://YOUR-BACKEND-URL/api` (e.g. `https://your-app.railway.app/api`).
+
 ```env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-NEXT_PUBLIC_API_URL=https://your-backend-url.com/api
+DATABASE_URL=postgresql://user:password@host:port/database
+NEXT_PUBLIC_API_URL=https://your-backend-url.com/api   # optional, for progress/games
 ```
 
 ### Backend (.env)
