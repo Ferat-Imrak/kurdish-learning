@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { motion } from "framer-motion"
-import { CheckCircle, XCircle, RotateCcw } from "lucide-react"
+import { ArrowLeft, CheckCircle, XCircle, RotateCcw } from "lucide-react"
 import PageContainer from "../../../components/PageContainer"
 import BackLink from "../../../components/BackLink"
 import AudioButton from "../../../components/lessons/AudioButton"
