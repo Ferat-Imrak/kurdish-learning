@@ -401,6 +401,7 @@ export default function AnimalsWordsPage() {
   const handleRestart = () => {
     startPracticeSession()
   }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-kurdish-red/10 via-white to-kurdish-green/10">
       <PageContainer>
