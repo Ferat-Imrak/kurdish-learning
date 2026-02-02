@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { Asset } from 'expo-asset';
@@ -11,6 +11,8 @@ interface NumberCardProps {
   audioFile: string;
   audioAssets: Record<string, any>;
   onPlay?: () => void;
+  /** Optional style for dimming when already played */
+  style?: ViewStyle;
 }
 
 export default function NumberCard({
@@ -20,6 +22,7 @@ export default function NumberCard({
   audioFile,
   audioAssets,
   onPlay,
+  style,
 }: NumberCardProps) {
   const [playing, setPlaying] = useState(false);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
@@ -89,7 +92,7 @@ export default function NumberCard({
   };
 
   return (
-    <View style={styles.pressable}>
+    <View style={[styles.pressable, style ?? undefined]}>
       <View style={styles.card}>
         <View style={styles.content}>
           {/* Number on left */}

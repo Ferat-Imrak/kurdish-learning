@@ -10,21 +10,44 @@ import {
   ScrollView,
   Alert,
   Animated,
+  Linking,
 } from 'react-native';
 import type { TextInput as TextInputType } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { register as registerService } from '../../lib/services/auth';
 import { useAuthStore } from '../../lib/store/authStore';
 
+const SKY = '#EAF3FF';
+const SKY_DEEPER = '#d6e8ff';
+const TEXT_PRIMARY = '#0F172A';
+const TEXT_MUTED = '#64748B';
+
+// Use a public URL for legal links (not localhost — on device, localhost is the device itself)
+const getLegalBaseUrl = () => {
+  const url = process.env.EXPO_PUBLIC_WEB_URL || '';
+  const base = url.replace(/\/$/, '');
+  if (!base || /localhost|127\.0\.0\.1/.test(base)) {
+    return 'https://example.com'; // replace with your production site, e.g. https://yourapp.com
+  }
+  return base;
+};
+const LEGAL_BASE = getLegalBaseUrl();
+const TERMS_URL = `${LEGAL_BASE}/terms`;
+const PRIVACY_URL = `${LEGAL_BASE}/privacy`;
+
 export default function RegisterScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ plan?: string }>();
   const { login, isAuthenticated } = useAuthStore();
   const emailInputRef = useRef<TextInputType>(null);
   const passwordInputRef = useRef<TextInputType>(null);
   const confirmPasswordInputRef = useRef<TextInputType>(null);
+  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'yearly'>(() =>
+    params.plan === 'monthly' ? 'monthly' : 'yearly'
+  );
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -49,6 +72,12 @@ export default function RegisterScreen() {
       useNativeDriver: true,
     }).start();
   }, []);
+
+  // Preselect plan from URL when opened from landing (e.g. ?plan=monthly or ?plan=yearly)
+  React.useEffect(() => {
+    const p = params.plan;
+    if (p === 'monthly' || p === 'yearly') setSelectedPlan(p);
+  }, [params.plan]);
 
   // Redirect if already authenticated
   React.useEffect(() => {
@@ -97,6 +126,7 @@ export default function RegisterScreen() {
         username: formData.username,
         email: formData.email,
         password: formData.password,
+        plan: selectedPlan,
       });
       
       if (response.success && response.user && response.token) {
@@ -116,33 +146,81 @@ export default function RegisterScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+    <View style={styles.pageWrap}>
+      <LinearGradient
+        colors={[SKY, SKY_DEEPER, SKY]}
+        style={StyleSheet.absoluteFill}
+      />
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardView}
         >
-          <Animated.View style={{ opacity: fadeAnim }}>
-            {/* Header */}
-            <View style={styles.header}>
-              <Pressable
-                onPress={() => router.replace('/')}
-                style={({ pressed }) => [
-                  styles.backButton,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Ionicons name="arrow-back" size={24} color="#111827" />
-              </Pressable>
-              <Text style={styles.title}>Create Account</Text>
-              <Text style={styles.subtitle}>Join Peyvi and start learning</Text>
-            </View>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <Animated.View style={[styles.scrollInner, { opacity: fadeAnim }]}>
+              {/* Header: back (left) + title (center) */}
+              <View style={styles.header}>
+                <Pressable
+                  onPress={() => {
+                  if (router.canGoBack()) router.back();
+                  else router.replace('/');
+                }}
+                  style={({ pressed }) => [
+                    styles.backButton,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Ionicons name="chevron-back" size={24} color={TEXT_PRIMARY} />
+                </Pressable>
+                <View style={styles.headerTextWrap}>
+                  <Text style={styles.title}>Create Account</Text>
+                  <Text style={styles.subtitle}>Join Peyvi and start learning</Text>
+                </View>
+                <View style={styles.headerSpacer} />
+              </View>
 
-            {/* Form */}
+              {/* Choose Your Plan */}
+              <View style={styles.planSection}>
+                <Text style={styles.planLabel}>Choose Your Plan</Text>
+                <View style={styles.planRow}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.planOption,
+                      selectedPlan === 'monthly' && styles.planOptionSelected,
+                      pressed && styles.planOptionPressed,
+                    ]}
+                    onPress={() => setSelectedPlan('monthly')}
+                  >
+                    <Text style={styles.planPrice}>$4.99</Text>
+                    <Text style={styles.planPeriod}>per month</Text>
+                    {selectedPlan === 'monthly' && (
+                      <Ionicons name="checkmark-circle" size={18} color="#2563eb" style={styles.planCheck} />
+                    )}
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.planOption,
+                      selectedPlan === 'yearly' && styles.planOptionSelected,
+                      pressed && styles.planOptionPressed,
+                    ]}
+                    onPress={() => setSelectedPlan('yearly')}
+                  >
+                    <Text style={styles.planPrice}>$49.99</Text>
+                    <Text style={styles.planPeriod}>per year</Text>
+                    <Text style={styles.planSave}>2 months free</Text>
+                    {selectedPlan === 'yearly' && (
+                      <Ionicons name="checkmark-circle" size={18} color="#2563eb" style={styles.planCheck} />
+                    )}
+                  </Pressable>
+                </View>
+                <Text style={styles.planHint}>You can change your plan anytime after signup</Text>
+              </View>
+
+              {/* Form */}
             <View style={styles.form}>
               {/* Username Input */}
               <View style={styles.inputContainer}>
@@ -304,6 +382,24 @@ export default function RegisterScreen() {
             </LinearGradient>
           </Pressable>
 
+          {/* Terms */}
+          <Text style={styles.termsText}>
+            By creating an account, you agree to our{' '}
+            <Text
+              style={styles.termsLink}
+              onPress={() => Linking.openURL(TERMS_URL)}
+            >
+              Terms of Service
+            </Text>
+            {' '}and{' '}
+            <Text
+              style={styles.termsLink}
+              onPress={() => Linking.openURL(PRIVACY_URL)}
+            >
+              Privacy Policy
+            </Text>
+          </Text>
+
           {/* Login Link */}
           <View style={styles.loginContainer}>
             <Text style={styles.loginText}>Already have an account? </Text>
@@ -317,13 +413,17 @@ export default function RegisterScreen() {
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  pageWrap: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: 'transparent',
   },
   keyboardView: {
     flex: 1,
@@ -333,30 +433,114 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
   },
+  scrollInner: {
+    alignSelf: 'stretch',
+    width: '100%',
+  },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 32,
   },
   backButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: 12,
-    backgroundColor: '#f3f4f6',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
   },
-  pressed: {
-    opacity: 0.7,
+  headerTextWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerSpacer: {
+    width: 44,
   },
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#111827',
+    color: TEXT_PRIMARY,
     marginBottom: 8,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
-    color: '#6b7280',
+    color: TEXT_MUTED,
+    textAlign: 'center',
+  },
+  pressed: {
+    opacity: 0.7,
+  },
+  planSection: {
+    marginBottom: 20,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(37, 99, 235, 0.3)',
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    width: '100%',
+    alignSelf: 'stretch',
+  },
+  planLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: TEXT_PRIMARY,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  planRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  planOption: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 88,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#e5e7eb',
+    backgroundColor: '#fff',
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  planOptionSelected: {
+    borderColor: '#2563eb',
+    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+  },
+  planOptionPressed: { opacity: 0.9 },
+  planPrice: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+    textAlign: 'center',
+  },
+  planPeriod: {
+    fontSize: 12,
+    color: TEXT_MUTED,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  planSave: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#059669',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  planCheck: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+  },
+  planHint: {
+    fontSize: 11,
+    color: TEXT_MUTED,
+    textAlign: 'center',
+    marginTop: 10,
   },
   form: {
     flex: 1,
@@ -367,13 +551,13 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#374151',
+    color: TEXT_PRIMARY,
     marginBottom: 8,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
+    backgroundColor: '#ffffff',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e5e7eb',
@@ -389,7 +573,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 16,
-    color: '#111827',
+    color: TEXT_PRIMARY,
   },
   eyeButton: {
     padding: 4,
@@ -404,9 +588,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 20,
     paddingTop: 16,
-    backgroundColor: '#ffffff',
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
+    backgroundColor: 'transparent',
   },
   primaryButton: {
     borderRadius: 16,
@@ -429,6 +611,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
   },
+  termsText: {
+    fontSize: 12,
+    color: TEXT_MUTED,
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  termsLink: {
+    color: '#2563eb',
+    fontWeight: '600',
+  },
   loginContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -436,7 +629,7 @@ const styles = StyleSheet.create({
   },
   loginText: {
     fontSize: 15,
-    color: '#6b7280',
+    color: TEXT_MUTED,
   },
   loginLink: {
     fontSize: 15,

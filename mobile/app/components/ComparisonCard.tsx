@@ -10,6 +10,9 @@ interface ComparisonCardProps {
   onPlay?: (audioKey: string) => void;
   audioKey1?: string;
   audioKey2?: string;
+  /** Dim column when this letter's audio was already played */
+  played1?: boolean;
+  played2?: boolean;
 }
 
 export default function ComparisonCard({
@@ -20,6 +23,8 @@ export default function ComparisonCard({
   onPlay,
   audioKey1,
   audioKey2,
+  played1,
+  played2,
 }: ComparisonCardProps) {
   const [playing1, setPlaying1] = useState(false);
   const [playing2, setPlaying2] = useState(false);
@@ -106,7 +111,7 @@ export default function ComparisonCard({
 
         <Text style={styles.vs}>vs</Text>
 
-        <View style={styles.letterColumn}>
+        <View style={[styles.letterColumn, played2 && styles.playedColumn]}>
           <Text style={styles.glyph}>{letter2.glyph}</Text>
           <Text style={styles.label}>Long sound</Text>
           <View style={styles.wordContainer}>
@@ -203,6 +208,9 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     gap: 8,
+  },
+  playedColumn: {
+    opacity: 0.65,
   },
   glyph: {
     fontSize: 48,

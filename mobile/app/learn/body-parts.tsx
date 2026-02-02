@@ -19,7 +19,7 @@ import { Audio } from 'expo-av';
 import { Asset } from 'expo-asset';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
-import { restoreRefsFromProgress, getLearnedCount } from '../../lib/utils/progressHelper';
+import { restoreRefsFromProgress } from '../../lib/utils/progressHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -203,7 +203,9 @@ export default function BodyPartsPage() {
   const { updateLessonProgress, getLessonProgress } = useProgressStore();
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
-  
+  // Snapshot of played keys for dimming (updated when we play; restored from storage on mount)
+  const [playedKeysSnapshot, setPlayedKeysSnapshot] = useState<string[]>(() => getLessonProgress(LESSON_ID).playedAudioKeys || []);
+
   // Progress tracking refs - will be restored from stored progress
   const progressConfig = {
     totalAudios: 24, // 18 body parts + 6 body actions
@@ -218,10 +220,8 @@ export default function BodyPartsPage() {
   const storedProgress = getLessonProgress(LESSON_ID);
   const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
   const startTimeRef = useRef<number>(estimatedStartTime);
-  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
-  // Base audio plays estimated from stored progress
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set((storedProgress.playedAudioKeys || []) as string[]));
   const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
-  // Track previous unique audio count to calculate increment
   const previousUniqueAudiosCountRef = useRef<number>(0);
 
   // Initialize audio mode
@@ -257,19 +257,15 @@ export default function BodyPartsPage() {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS');
     }
     
-    // Restore refs from stored progress (in case progress was updated after component mount)
+    // Restore refs from stored progress (including persisted played audio keys)
     const currentProgress = getLessonProgress(LESSON_ID);
     const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig);
     startTimeRef.current = estimatedStartTime;
     baseAudioPlaysRef.current = estimatedAudioPlays;
-    
-    console.log('🔄 Restored refs:', {
-      estimatedAudioPlays,
-      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
-      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
-    });
-    
-    // Note: uniqueAudiosPlayedRef starts fresh each session, but we account for base progress
+    if (currentProgress.playedAudioKeys?.length) {
+      uniqueAudiosPlayedRef.current = new Set(currentProgress.playedAudioKeys);
+      setPlayedKeysSnapshot(currentProgress.playedAudioKeys);
+    }
   }, [isAuthenticated]);
 
   const playAudio = async (audioKey: string, audioText: string, actualAudioFile?: string) => {
@@ -318,9 +314,10 @@ export default function BodyPartsPage() {
       setSound(newSound);
       setPlayingAudio(audioKey);
       
-      // Track unique audios played (only count new ones)
+      // Track unique audios played (only count new ones); persist keys for dimming and next session
       if (!uniqueAudiosPlayedRef.current.has(audioKey)) {
         uniqueAudiosPlayedRef.current.add(audioKey);
+        setPlayedKeysSnapshot(Array.from(uniqueAudiosPlayedRef.current));
         handleAudioPlay();
       }
 
@@ -338,41 +335,10 @@ export default function BodyPartsPage() {
   };
 
   const calculateProgress = () => {
-    // Get current progress to access latest timeSpent
-    const currentProgress = getLessonProgress(LESSON_ID);
-    
-    // Calculate session time (time since restored start time)
-    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
-    
-    // Audio progress: new unique audios played this session only
+    const totalAudios = progressConfig.totalAudios;
     const currentUniqueAudios = uniqueAudiosPlayedRef.current.size;
-    const newUniqueAudios = currentUniqueAudios - previousUniqueAudiosCountRef.current;
-    const newAudioProgress = Math.min(50, newUniqueAudios * 2.08);
-    // Update previous count for next calculation
-    previousUniqueAudiosCountRef.current = currentUniqueAudios;
-    
-    // Time progress: new session time only (max 50%, 4 minutes = 50%)
-    const newTimeProgress = Math.min(50, sessionTimeMinutes * 12.5);
-    
-    // Get base progress from stored progress
-    const baseProgress = currentProgress?.progress || 0;
-    
-    // For lessons without practice: audio + time can reach 100%
-    // Ensure that when all audios are played, audio progress contributes its full weight
-    let effectiveAudioCount = currentUniqueAudios;
-    if (effectiveAudioCount >= 24) {
-      effectiveAudioCount = 24; // Cap at total
-      // Force full audio contribution when all are played
-      const fullAudioProgress = 50;
-      const calculatedProgress = Math.min(100, baseProgress + fullAudioProgress + newTimeProgress);
-      return Math.max(baseProgress, calculatedProgress);
-    }
-    
-    // Calculate new progress from session activity
-    const calculatedProgress = Math.min(100, baseProgress + newAudioProgress + newTimeProgress);
-    
-    // Use Math.max to prevent progress from dropping due to new calculation method
-    return Math.max(baseProgress, calculatedProgress);
+    // Progress = (played count / total) * 100 so count and % stay in sync with persisted keys
+    return Math.min(100, Math.round((currentUniqueAudios / totalAudios) * 100));
   };
 
   const handleAudioPlay = () => {
@@ -387,22 +353,12 @@ export default function BodyPartsPage() {
     const safeTimeSpent = Math.min(1000, totalTimeSpent);
     
     const progress = calculateProgress();
-    const status = currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS';
-    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent);
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS');
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent, Array.from(uniqueAudiosPlayedRef.current));
   };
 
-  // Calculate total examples count for Learn progress
   const totalExamples = bodyParts.length + bodyActions.length;
-  // Use getLearnedCount to get estimated base + new unique audios
-  const currentProgress = getLessonProgress(LESSON_ID);
-  const progressState = {
-    uniqueAudiosPlayed: uniqueAudiosPlayedRef.current,
-    sessionStartTime: startTimeRef.current,
-    baseProgress: currentProgress?.progress || 0,
-    baseTimeSpent: currentProgress?.timeSpent || 0,
-    practiceScore: currentProgress?.score,
-  };
-  const learnedCount = getLearnedCount(progressState, totalExamples);
+  const learnedCount = Math.min(totalExamples, uniqueAudiosPlayedRef.current.size);
 
   const progress = getLessonProgress(LESSON_ID);
 
@@ -448,8 +404,9 @@ export default function BodyPartsPage() {
           <View style={styles.bodyPartsGrid}>
             {bodyParts.map((part, index) => {
               const audioKey = `body-${part.audioFile}`;
+              const alreadyPlayed = playedKeysSnapshot.includes(audioKey);
               return (
-                <View key={index} style={styles.bodyPartCard}>
+                <View key={index} style={[styles.bodyPartCard, alreadyPlayed && styles.playedCard]}>
                   <View style={styles.bodyPartTextContainer}>
                     <Text style={styles.bodyPartKurdish}>{part.ku}</Text>
                     <Text style={styles.bodyPartEnglish}>{part.en}</Text>
@@ -483,8 +440,9 @@ export default function BodyPartsPage() {
           <View style={styles.actionsGrid}>
             {bodyActions.map((action, index) => {
               const audioKey = `action-${action.audioFile}`;
+              const alreadyPlayed = playedKeysSnapshot.includes(audioKey);
               return (
-                <View key={index} style={styles.actionCard}>
+                <View key={index} style={[styles.actionCard, alreadyPlayed && styles.playedCard]}>
                   <View style={styles.actionHeader}>
                     <Text style={styles.actionIcon}>{action.icon}</Text>
                     <View style={styles.actionTextContainer}>
@@ -695,6 +653,9 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
     justifyContent: 'space-between',
     minHeight: 180,
+  },
+  playedCard: {
+    opacity: 0.65,
   },
   actionHeader: {
     flexDirection: 'row',

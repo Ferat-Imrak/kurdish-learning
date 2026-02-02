@@ -14,6 +14,7 @@ model User {
   id                 String        @id @default(cuid())
   email              String        @unique
   name               String
+  image              String?       // Profile picture (base64 data URL or URL)
   passwordHash       String?       // Store hashed password
   role               UserRole      @default(PARENT)
   subscriptionPlan   SubscriptionPlan? @default(MONTHLY)

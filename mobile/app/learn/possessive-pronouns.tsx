@@ -303,8 +303,8 @@ export default function PossessivePronounsPage() {
   const [isCompleted, setIsCompleted] = useState(false);
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
-  
-  // Progress tracking refs - will be restored from stored progress
+  const [playedKeysSnapshot, setPlayedKeysSnapshot] = useState<string[]>(() => getLessonProgress(LESSON_ID).playedAudioKeys || []);
+
   const progressConfig = {
     totalAudios: 26, // Total unique audios in presentTenseExamples
     hasPractice: true,
@@ -318,11 +318,8 @@ export default function PossessivePronounsPage() {
   const storedProgress = getLessonProgress(LESSON_ID);
   const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
   const startTimeRef = useRef<number>(estimatedStartTime);
-  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
-  // Base audio plays estimated from stored progress
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set((storedProgress.playedAudioKeys || []) as string[]));
   const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
-  // Track previous unique audio count to calculate increment
-  const previousUniqueAudiosCountRef = useRef<number>(0);
 
   // Initialize audio mode
   useEffect(() => {
@@ -358,19 +355,14 @@ export default function PossessivePronounsPage() {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS');
     }
     
-    // Restore refs from stored progress (in case progress was updated after component mount)
     const currentProgress = getLessonProgress(LESSON_ID);
     const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig);
     startTimeRef.current = estimatedStartTime;
     baseAudioPlaysRef.current = estimatedAudioPlays;
-    
-    console.log('🔄 Restored refs:', {
-      estimatedAudioPlays,
-      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
-      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
-    });
-    
-    // Note: uniqueAudiosPlayedRef starts fresh each session, but we account for base progress
+    if (currentProgress.playedAudioKeys?.length) {
+      uniqueAudiosPlayedRef.current = new Set(currentProgress.playedAudioKeys);
+      setPlayedKeysSnapshot(currentProgress.playedAudioKeys);
+    }
   }, [isAuthenticated]);
 
   const playAudio = async (audioFile: string) => {
@@ -396,9 +388,9 @@ export default function PossessivePronounsPage() {
       setSound(newSound);
       setPlayingAudio(audioFile);
       
-      // Track unique audios played (only count new ones)
       if (!uniqueAudiosPlayedRef.current.has(audioFile)) {
         uniqueAudiosPlayedRef.current.add(audioFile);
+        setPlayedKeysSnapshot(Array.from(uniqueAudiosPlayedRef.current));
         handleAudioPlay();
       }
 
@@ -422,39 +414,23 @@ export default function PossessivePronounsPage() {
     // Calculate session time (time since restored start time)
     const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
     
-    // Audio progress: new unique audios played this session only
+    const totalAudios = progressConfig.totalAudios;
     const currentUniqueAudios = uniqueAudiosPlayedRef.current.size;
-    const newUniqueAudios = currentUniqueAudios - previousUniqueAudiosCountRef.current;
-    const newAudioProgress = Math.min(30, newUniqueAudios * 1.15);
-    // Update previous count for next calculation
-    previousUniqueAudiosCountRef.current = currentUniqueAudios;
-    
-    // Time progress: new session time only (max 20%, 4 minutes = 20%)
+    const newAudioProgress = Math.min(30, (currentUniqueAudios / totalAudios) * 30);
     const newTimeProgress = Math.min(20, sessionTimeMinutes * 5);
-    
-    // Get base progress from stored progress
-    const baseProgress = currentProgress?.progress || 0;
-    
-    // Practice progress: only if practice was just completed
+
     let practiceProgress = 0;
     if (practiceScore !== undefined) {
-      // Practice just completed - give full 50% if passed (>= 70%)
       if (practiceScore >= 70) {
         practiceProgress = 50;
       } else {
-        // Failed - proportional score (0-49%)
         practiceProgress = Math.min(49, practiceScore * 0.5);
       }
     } else if (currentProgress?.status === 'COMPLETED') {
-      // Practice was completed before - give full 50%
       practiceProgress = 50;
     }
-    
-    // Calculate new progress from session activity
-    const calculatedProgress = Math.min(100, baseProgress + newAudioProgress + newTimeProgress + practiceProgress);
-    
-    // Use Math.max to prevent progress from dropping due to new calculation method
-    return Math.max(baseProgress, calculatedProgress);
+
+    return Math.min(100, newAudioProgress + newTimeProgress + practiceProgress);
   };
 
   const handleAudioPlay = () => {
@@ -468,8 +444,9 @@ export default function PossessivePronounsPage() {
     // Safeguard: ensure timeSpent is reasonable (max 1000 minutes = ~16 hours)
     const safeTimeSpent = Math.min(1000, totalTimeSpent);
     
-    const progress = calculateProgress(undefined); // Don't pass practice score here
-    updateLessonProgress(LESSON_ID, progress, 'IN_PROGRESS', undefined, safeTimeSpent);
+    const progress = calculateProgress(undefined);
+    const status = progress >= 100 ? 'COMPLETED' : 'IN_PROGRESS';
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent, Array.from(uniqueAudiosPlayedRef.current));
   };
 
   const handleAnswerSelect = (index: number) => {
@@ -507,9 +484,8 @@ export default function PossessivePronounsPage() {
       // Calculate combined progress with practice score
       const progress = calculateProgress(practiceScorePercent);
       
-      // Only mark lesson as completed if practice is passed
       const status = isPracticePassed ? 'COMPLETED' : 'IN_PROGRESS';
-      updateLessonProgress(LESSON_ID, progress, status, isPracticePassed ? practiceScorePercent : undefined, safeTimeSpent);
+      updateLessonProgress(LESSON_ID, progress, status, isPracticePassed ? practiceScorePercent : undefined, safeTimeSpent, Array.from(uniqueAudiosPlayedRef.current));
     }
   };
 

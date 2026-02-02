@@ -19,7 +19,7 @@ import { Audio } from 'expo-av';
 import { Asset } from 'expo-asset';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
-import { restoreRefsFromProgress, getLearnedCount } from '../../lib/utils/progressHelper';
+import { restoreRefsFromProgress } from '../../lib/utils/progressHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -147,15 +147,13 @@ export default function WeatherPage() {
     audioMultiplier: 1.35, // 50% / 37 audios ≈ 1.35% per audio
   };
   
-  // Initialize refs - will be restored in useEffect
+  const [playedKeysSnapshot, setPlayedKeysSnapshot] = useState<string[]>(() => getLessonProgress(LESSON_ID).playedAudioKeys || []);
+
   const storedProgress = getLessonProgress(LESSON_ID);
   const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
   const startTimeRef = useRef<number>(estimatedStartTime);
-  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
-  // Base audio plays estimated from stored progress
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set((storedProgress.playedAudioKeys || []) as string[]));
   const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
-  // Track previous unique audio count to calculate increment
-  const previousUniqueAudiosCountRef = useRef<number>(0);
 
   // Initialize audio mode
   useEffect(() => {
@@ -191,19 +189,14 @@ export default function WeatherPage() {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS');
     }
     
-    // Restore refs from stored progress (in case progress was updated after component mount)
     const currentProgress = getLessonProgress(LESSON_ID);
     const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig);
     startTimeRef.current = estimatedStartTime;
     baseAudioPlaysRef.current = estimatedAudioPlays;
-    
-    console.log('🔄 Restored refs:', {
-      estimatedAudioPlays,
-      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
-      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
-    });
-    
-    // Note: uniqueAudiosPlayedRef starts fresh each session, but we account for base progress
+    if (currentProgress.playedAudioKeys?.length) {
+      uniqueAudiosPlayedRef.current = new Set(currentProgress.playedAudioKeys);
+      setPlayedKeysSnapshot(currentProgress.playedAudioKeys);
+    }
   }, [isAuthenticated]);
 
   const playAudio = async (audioKey: string, audioText: string, actualAudioFile?: string) => {
@@ -252,9 +245,9 @@ export default function WeatherPage() {
       setSound(newSound);
       setPlayingAudio(audioKey);
       
-      // Track unique audios played (only count new ones) - use audioKey as identifier
       if (!uniqueAudiosPlayedRef.current.has(audioKey)) {
         uniqueAudiosPlayedRef.current.add(audioKey);
+        setPlayedKeysSnapshot(Array.from(uniqueAudiosPlayedRef.current));
         handleAudioPlay();
       }
 
@@ -272,35 +265,14 @@ export default function WeatherPage() {
   };
 
   const calculateProgress = () => {
-    // Get current progress to access latest timeSpent
     const currentProgress = getLessonProgress(LESSON_ID);
-    
-    // Calculate session time (time since restored start time)
+    const baseTimeSpent = currentProgress?.timeSpent || 0;
     const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
-    
-    // Audio progress: new unique audios played this session only
+    const safeTotalTimeSpent = Math.min(1000, baseTimeSpent + sessionTimeMinutes);
     const currentUniqueAudios = uniqueAudiosPlayedRef.current.size;
-    const newUniqueAudios = currentUniqueAudios - previousUniqueAudiosCountRef.current;
-    const newAudioProgress = Math.min(50, newUniqueAudios * 1.35);
-    // Update previous count for next calculation
-    previousUniqueAudiosCountRef.current = currentUniqueAudios;
-    
-    // Time progress: new session time only (max 50%, 5 minutes = 50%)
-    const newTimeProgress = Math.min(50, sessionTimeMinutes * 10);
-    
-    // Get base progress from stored progress
-    const baseProgress = currentProgress?.progress || 0;
-    
-    // Calculate new progress from session activity
-    const calculatedProgress = Math.min(100, baseProgress + newAudioProgress + newTimeProgress);
-    
-    // Use Math.max to prevent progress from dropping due to new calculation method
-    // Also ensure that when all audios are played, audio progress reaches its maximum
-    const effectiveAudioCount = Math.min(currentUniqueAudios, progressConfig.totalAudios);
-    const maxAudioProgress = Math.min(50, effectiveAudioCount * 1.35);
-    const finalProgress = Math.max(baseProgress, Math.max(calculatedProgress, baseProgress - (50 - maxAudioProgress) + maxAudioProgress));
-    
-    return Math.max(baseProgress, finalProgress);
+    const audioProgress = Math.min(50, (currentUniqueAudios / progressConfig.totalAudios) * 50);
+    const timeProgress = Math.min(50, safeTotalTimeSpent * 10);
+    return Math.min(100, audioProgress + timeProgress);
   };
 
   const handleAudioPlay = () => {
@@ -315,22 +287,12 @@ export default function WeatherPage() {
     const safeTimeSpent = Math.min(1000, totalTimeSpent);
     
     const progress = calculateProgress();
-    const status = currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS';
-    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent);
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS');
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent, Array.from(uniqueAudiosPlayedRef.current));
   };
 
-  // Calculate total examples count for Learn progress
   const totalExamples = seasons.length + weatherTypes.length + weatherDescriptions.length + weatherQuestions.length;
-  // Use getLearnedCount to get estimated base + new unique audios
-  const currentProgress = getLessonProgress(LESSON_ID);
-  const progressState = {
-    uniqueAudiosPlayed: uniqueAudiosPlayedRef.current,
-    sessionStartTime: startTimeRef.current,
-    baseProgress: currentProgress?.progress || 0,
-    baseTimeSpent: currentProgress?.timeSpent || 0,
-    practiceScore: currentProgress?.score,
-  };
-  const learnedCount = getLearnedCount(progressState, totalExamples);
+  const learnedCount = Math.min(totalExamples, uniqueAudiosPlayedRef.current.size);
 
   const progress = getLessonProgress(LESSON_ID);
 
@@ -376,8 +338,9 @@ export default function WeatherPage() {
           <View style={styles.seasonsGrid}>
             {seasons.map((season, index) => {
               const audioKey = `season-${season.audioFile}`;
+              const alreadyPlayed = playedKeysSnapshot.includes(audioKey);
               return (
-                <View key={index} style={styles.seasonCard}>
+                <View key={index} style={[styles.seasonCard, alreadyPlayed && styles.playedCard]}>
                   <View style={styles.seasonTextContainer}>
                     <Text style={styles.seasonKurdish}>{season.ku}</Text>
                     <Text style={styles.seasonEnglish}>{season.en}</Text>
@@ -446,8 +409,9 @@ export default function WeatherPage() {
           <View style={styles.descriptionsList}>
             {weatherDescriptions.map((item, index) => {
               const audioKey = `description-${item.audioFile}`;
+              const alreadyPlayed = playedKeysSnapshot.includes(audioKey);
               return (
-                <View key={index} style={styles.descriptionCard}>
+                <View key={index} style={[styles.descriptionCard, alreadyPlayed && styles.playedCard]}>
                   <View style={styles.descriptionContent}>
                     <Text style={styles.descriptionIcon}>{item.icon}</Text>
                     <View style={styles.descriptionTextContainer}>
@@ -481,8 +445,9 @@ export default function WeatherPage() {
           <View style={styles.questionsList}>
             {weatherQuestions.map((item, index) => {
               const audioKey = `question-${item.audioFile}`;
+              const alreadyPlayed = playedKeysSnapshot.includes(audioKey);
               return (
-                <View key={index} style={styles.questionCard}>
+                <View key={index} style={[styles.questionCard, alreadyPlayed && styles.playedCard]}>
                   <View style={styles.questionTextContainer}>
                     <Text style={styles.questionKurdish}>{item.ku}</Text>
                     <Text style={styles.questionEnglish}>{item.en}</Text>
@@ -567,6 +532,7 @@ const styles = StyleSheet.create({
     color: '#111827',
   },
   progressBarComplete: { color: '#10b981' },
+  playedCard: { opacity: 0.65 },
   progressBarDivider: {
     width: 1,
     height: 24,

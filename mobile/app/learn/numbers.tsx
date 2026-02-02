@@ -219,14 +219,15 @@ export default function NumbersPage() {
     audioMultiplier: 0.67, // 30% / 45 audios ≈ 0.67% per audio
   };
   
+  // Snapshot of played keys for dimming (restored from storage on mount)
+  const [playedKeysSnapshot, setPlayedKeysSnapshot] = useState<string[]>(() => getLessonProgress(LESSON_ID).playedAudioKeys || []);
+
   // Initialize refs - will be restored in useEffect
   const storedProgress = getLessonProgress(LESSON_ID);
   const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
   const startTimeRef = useRef<number>(estimatedStartTime);
-  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
-  // Base audio plays estimated from stored progress
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set((storedProgress.playedAudioKeys || []) as string[]));
   const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
-  // Track previous unique audio count to calculate increment
   const previousUniqueAudiosCountRef = useRef<number>(0);
 
   // Mode state
@@ -532,18 +533,13 @@ export default function NumbersPage() {
   }, [mode]); // Only depend on mode, not practiceGame
 
   const calculateProgress = (practiceScore?: number) => {
-    // Get current progress to access latest timeSpent
     const currentProgress = getLessonProgress(LESSON_ID);
-    
-    // Calculate total time spent (base + session)
     const baseTimeSpent = currentProgress?.timeSpent || 0;
     const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
     const totalTimeSpent = baseTimeSpent + sessionTimeMinutes;
-    
-    // Calculate progress from ACTUAL STATE, not from stored baseProgress
-    
-    // 1. Audio progress: Calculate from total unique audios played (base + new)
-    const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size;
+
+    // 1. Audio progress: from persisted played keys (exact count)
+    const totalUniqueAudios = uniqueAudiosPlayedRef.current.size;
     const effectiveUniqueAudios = Math.min(totalUniqueAudios, progressConfig.totalAudios);
     const audioProgress = Math.min(30, (effectiveUniqueAudios / progressConfig.totalAudios) * 30);
     
@@ -582,37 +578,19 @@ export default function NumbersPage() {
   };
 
   const handleAudioPlay = (audioKey: string) => {
-    // Track unique audios played (only count new ones) - check BEFORE adding
-    if (uniqueAudiosPlayedRef.current.has(audioKey)) {
-      // Already played this audio, don't update progress
-      console.log('🔇 Audio already played, skipping:', audioKey);
-      return;
-    }
-    
-    console.log('🔊 New unique audio played:', audioKey, 'Total unique:', uniqueAudiosPlayedRef.current.size + 1);
+    if (uniqueAudiosPlayedRef.current.has(audioKey)) return;
+
     uniqueAudiosPlayedRef.current.add(audioKey);
-    
+    setPlayedKeysSnapshot(Array.from(uniqueAudiosPlayedRef.current));
+
     const currentProgress = getLessonProgress(LESSON_ID);
-    
-    // Don't pass practiceScore - we're just playing audio, not doing practice
     const progress = calculateProgress(undefined);
-    const status = currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS';
-    
-    // Calculate time spent for this update
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS');
     const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
     const baseTimeSpent = currentProgress.timeSpent || 0;
-    // Safeguard: if baseTimeSpent is unreasonably large (> 10000 minutes = ~166 hours), reset it
     const safeBaseTimeSpent = baseTimeSpent > 10000 ? 0 : Math.max(baseTimeSpent, 0);
-    const totalTimeSpent = safeBaseTimeSpent + Math.max(sessionTimeMinutes, 0);
-    const safeTimeSpent = Math.min(1000, totalTimeSpent);
-    
-    console.log('📊 Progress update:', {
-      progress,
-      uniqueAudios: uniqueAudiosPlayedRef.current.size,
-      audioKey,
-    });
-    
-    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent);
+    const safeTimeSpent = Math.min(1000, safeBaseTimeSpent + Math.max(sessionTimeMinutes, 0));
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent, Array.from(uniqueAudiosPlayedRef.current));
   };
 
   const progress = getLessonProgress(LESSON_ID);
@@ -827,16 +805,21 @@ export default function NumbersPage() {
                 See numbers in context:
               </Text>
               <View style={styles.examplesList}>
-                {numberExamples.map((example, index) => (
-                  <ExampleCard
-                    key={index}
-                    kurdish={example.ku}
-                    english={example.en}
-                    audioFile={example.audioFile}
-                    audioAssets={audioAssets}
-                    onPlay={() => handleAudioPlay(`example-${example.audioFile}`)}
-                  />
-                ))}
+                {numberExamples.map((example, index) => {
+                  const audioKey = `example-${example.audioFile}`;
+                  const alreadyPlayed = playedKeysSnapshot.includes(audioKey);
+                  return (
+                    <View key={index} style={alreadyPlayed ? styles.playedCard : undefined}>
+                      <ExampleCard
+                        kurdish={example.ku}
+                        english={example.en}
+                        audioFile={example.audioFile}
+                        audioAssets={audioAssets}
+                        onPlay={() => handleAudioPlay(audioKey)}
+                      />
+                    </View>
+                  );
+                })}
               </View>
             </View>
           </>
@@ -1139,6 +1122,7 @@ const styles = StyleSheet.create({
     color: '#111827',
   },
   progressBarComplete: { color: '#10b981' },
+  playedCard: { opacity: 0.65 },
   progressBarDivider: {
     width: 1,
     height: 24,

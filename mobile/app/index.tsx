@@ -18,6 +18,11 @@ import { useAuthStore } from '../lib/store/authStore';
 
 const { width } = Dimensions.get('window');
 
+const SKY = '#EAF3FF';
+const SKY_DEEPER = '#d6e8ff';
+const TEXT_PRIMARY = '#0F172A';
+const TEXT_MUTED = '#64748B';
+
 export default function LandingScreen() {
   const router = useRouter();
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -174,31 +179,34 @@ export default function LandingScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* Hero Section */}
-        <Animated.View
-          style={[
-            styles.heroSection,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
-          ]}
+    <View style={styles.pageWrap}>
+      <LinearGradient
+        colors={[SKY, SKY_DEEPER, SKY]}
+        style={StyleSheet.absoluteFill}
+      />
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
         >
-          <Image
-            source={require('../assets/peyvi-logo.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-          <Text style={styles.heroHeadline}>Learn Kurdish The Fun Way</Text>
-          
-          {/* Primary CTA */}
-          <Pressable
-            onPress={() => router.replace('/auth/register' as any)}
+          {/* Logo at top only - no title */}
+          <Animated.View
+            style={[
+              styles.heroSection,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
+          >
+            <Image
+              source={require('../assets/peyvi-logo.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+            {/* Primary CTA */}
+            <Pressable
+            onPress={() => router.push('/auth/register' as any)}
             style={({ pressed }) => [
               styles.primaryCTA,
               pressed && styles.pressed,
@@ -237,7 +245,7 @@ export default function LandingScreen() {
                 styles.pricingCard,
                 pressed && styles.pressed,
               ]}
-              onPress={() => router.replace('/auth/register' as any)}
+              onPress={() => router.push('/auth/register?plan=monthly' as any)}
             >
               <Text style={styles.pricingLabel}>Monthly</Text>
               <Text style={styles.pricingPrice}>$4.99<Text style={styles.pricingPeriod}>/mo</Text></Text>
@@ -253,7 +261,7 @@ export default function LandingScreen() {
                 styles.pricingCardFeatured,
                 pressed && styles.pressed,
               ]}
-              onPress={() => router.replace('/auth/register' as any)}
+              onPress={() => router.push('/auth/register?plan=yearly' as any)}
             >
               <View style={styles.bestValueBadge}>
                 <Text style={styles.bestValueText}>BEST VALUE</Text>
@@ -336,7 +344,7 @@ export default function LandingScreen() {
         {/* Final CTA */}
         <View style={styles.finalCTASection}>
           <Pressable
-            onPress={() => router.replace('/auth/register' as any)}
+            onPress={() => router.push('/auth/register' as any)}
             style={({ pressed }) => [
               styles.finalCTA,
               pressed && styles.pressed,
@@ -354,13 +362,17 @@ export default function LandingScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  pageWrap: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: 'transparent',
   },
   scrollContent: {
     paddingBottom: 24,
@@ -375,13 +387,6 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 16,
-    marginBottom: 16,
-  },
-  heroHeadline: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-    textAlign: 'center',
     marginBottom: 24,
   },
   primaryCTA: {

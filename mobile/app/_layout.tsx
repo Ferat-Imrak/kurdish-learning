@@ -60,6 +60,10 @@ export default function RootLayout() {
           <Stack.Screen name="stories" options={{ gestureEnabled: true }} />
           <Stack.Screen name="auth/login" />
           <Stack.Screen name="auth/register" />
+          <Stack.Screen name="subscription" options={{ gestureEnabled: true }} />
+          <Stack.Screen name="edit-profile" options={{ gestureEnabled: true }} />
+          <Stack.Screen name="change-password" options={{ gestureEnabled: true }} />
+          <Stack.Screen name="delete-account" options={{ gestureEnabled: true }} />
         </Stack>
       </QueryClientProvider>
     </GestureHandlerRootView>

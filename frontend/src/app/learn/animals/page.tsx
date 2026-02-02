@@ -439,7 +439,6 @@ export default function AnimalsWordsPage() {
               Practice
             </button>
           </div>
-        </div>
 
         {/* Practice Mode - Listening Exercise */}
         {mode === 'practice' && currentExercise && (

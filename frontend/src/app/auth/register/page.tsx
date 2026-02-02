@@ -477,6 +477,18 @@ export default function RegisterPage() {
               >
                 {isLoading ? 'Creating Account...' : 'Create Account'}
               </button>
+
+              {/* Terms */}
+              <p className="text-center text-[11px] sm:text-xs text-gray-500 mt-4">
+                By creating an account, you agree to our{' '}
+                <Link href="/terms" className="text-primaryBlue hover:underline font-medium">
+                  Terms of Service
+                </Link>{' '}
+                and{' '}
+                <Link href="/privacy" className="text-primaryBlue hover:underline font-medium">
+                  Privacy Policy
+                </Link>
+              </p>
             </form>
 
             {/* Login Link */}
@@ -515,18 +527,6 @@ export default function RegisterPage() {
               ))}
             </div>
           </motion.div>
-
-          {/* Terms */}
-          <p className="text-center text-xs sm:text-sm text-gray-500 mt-8">
-            By creating an account, you agree to our{' '}
-            <Link href="/terms" className="text-primaryBlue hover:underline font-medium">
-              Terms of Service
-            </Link>{' '}
-            and{' '}
-            <Link href="/privacy" className="text-primaryBlue hover:underline font-medium">
-              Privacy Policy
-            </Link>
-          </p>
         </motion.div>
       </div>
     </div>

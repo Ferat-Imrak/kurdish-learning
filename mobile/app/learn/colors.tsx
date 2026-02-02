@@ -277,11 +277,10 @@ export default function ColorsPage() {
   const storedProgress = getLessonProgress(LESSON_ID);
   const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
   const startTimeRef = useRef<number>(estimatedStartTime);
-  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
-  // Base audio plays estimated from stored progress
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set((storedProgress.playedAudioKeys || []) as string[]));
   const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
-  // Track previous unique audio count to calculate increment
   const previousUniqueAudiosCountRef = useRef<number>(0);
+  const [playedKeysSnapshot, setPlayedKeysSnapshot] = useState<string[]>(() => (getLessonProgress(LESSON_ID).playedAudioKeys || []) as string[]);
 
   // Initialize audio mode
   useEffect(() => {
@@ -310,13 +309,14 @@ export default function ColorsPage() {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS');
     }
     
-    // Restore refs from stored progress (in case progress was updated after component mount)
     const currentProgress = getLessonProgress(LESSON_ID);
     const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig);
     startTimeRef.current = estimatedStartTime;
     baseAudioPlaysRef.current = estimatedAudioPlays;
-    
-    // Note: uniqueAudiosPlayedRef starts fresh each session, but we account for base progress
+    if (currentProgress.playedAudioKeys?.length) {
+      uniqueAudiosPlayedRef.current = new Set(currentProgress.playedAudioKeys);
+      setPlayedKeysSnapshot(currentProgress.playedAudioKeys);
+    }
   }, [isAuthenticated]);
 
   const playAudio = async (audioFile: string) => {
@@ -362,57 +362,21 @@ export default function ColorsPage() {
 
   const calculateProgress = () => {
     const currentProgress = getLessonProgress(LESSON_ID);
-    const baseProgress = currentProgress.progress || 0;
+    const totalExamples = progressConfig.totalAudios;
+    const currentUniqueAudiosCount = uniqueAudiosPlayedRef.current.size;
     const baseTimeSpent = currentProgress.timeSpent || 0;
-    
-    // Calculate session time (minutes)
     const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
-    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes;
-    
-    // Safeguard: if baseTimeSpent is unreasonably large, reset to 0
     const safeBaseTimeSpent = baseTimeSpent > 10000 ? 0 : baseTimeSpent;
-    const safeTotalTimeSpent = safeBaseTimeSpent + sessionTimeMinutes;
-    
-    // Calculate new unique audios played since last update
-    const currentUniqueAudiosCount = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size;
-    const newUniqueAudios = currentUniqueAudiosCount - previousUniqueAudiosCountRef.current;
-    
-    // Calculate total examples for validation
-    const totalExamples = progressConfig.totalAudios; // 59
-    const learnedCount = Math.min(currentUniqueAudiosCount, totalExamples);
-    
-    // If all audios are played, ensure we use the full count for calculation
-    // This fixes the issue where estimated baseAudioPlaysRef is incorrect
-    const effectiveAudioCount = learnedCount >= totalExamples ? totalExamples : currentUniqueAudiosCount;
-    
-    // Calculate progress from current state using NEW weights (50% audio + 50% time)
-    // Audio progress: max 50% (cap at 100% total for audio+time since no practice)
-    const maxAudioTimeProgress = 100; // 50% audio + 50% time = 100% max (no practice)
-    const audioProgress = Math.min(50, effectiveAudioCount * progressConfig.audioMultiplier);
-    const timeProgress = Math.min(50, safeTotalTimeSpent * progressConfig.timeMultiplier);
-    const calculatedProgress = Math.min(maxAudioTimeProgress, audioProgress + timeProgress);
-    
-    // Use the higher of stored progress or calculated progress
-    // This preserves accumulated progress while using correct weights going forward
-    // If stored progress is higher (from old weights), keep it until new calculation exceeds it
-    const totalProgress = Math.max(baseProgress, Math.min(100, calculatedProgress));
-    
-    // Update previous count for next calculation
-    previousUniqueAudiosCountRef.current = currentUniqueAudiosCount;
-    
-    // Final safeguard: ensure timeSpent is reasonable (max 10000 minutes = ~166 hours)
-    // If larger, it's likely corrupted (milliseconds or timestamp) - reset to 0
-    const finalTimeSpent = safeTotalTimeSpent > 10000 ? 0 : safeTotalTimeSpent;
-    
-    return {
-      progress: totalProgress,
-      timeSpent: finalTimeSpent,
-    };
+    const safeTotalTimeSpent = Math.min(10000, safeBaseTimeSpent + sessionTimeMinutes);
+    const progress = Math.min(100, Math.round((currentUniqueAudiosCount / totalExamples) * 100));
+    return { progress, timeSpent: safeTotalTimeSpent };
   };
 
   const handleAudioPlay = () => {
+    const currentProgress = getLessonProgress(LESSON_ID);
     const { progress, timeSpent } = calculateProgress();
-    updateLessonProgress(LESSON_ID, progress, 'IN_PROGRESS', undefined, timeSpent);
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS');
+    updateLessonProgress(LESSON_ID, progress, status, undefined, timeSpent, Array.from(uniqueAudiosPlayedRef.current));
   };
 
   // Process colors to add audioFile paths
@@ -439,7 +403,7 @@ export default function ColorsPage() {
   // Calculate total examples count for Learn progress (12 colors + 47 examples = 59)
   const totalExamples = colors.length + colors.reduce((sum, color) => sum + color.examples.length, 0);
   // Show accumulated unique audios (base + new in this session)
-  const learnedCount = Math.min(baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size, totalExamples);
+  const learnedCount = Math.min(totalExamples, uniqueAudiosPlayedRef.current.size);
 
   return (
     <View style={styles.pageWrap}>
@@ -477,8 +441,9 @@ export default function ColorsPage() {
         {colorsWithAudio.map((color) => {
           const isExpanded = expandedColor === color.ku;
           
+          const colorPlayed = playedKeysSnapshot.includes(color.audioFile);
           return (
-            <View key={color.ku} style={styles.colorCard}>
+            <View key={color.ku} style={[styles.colorCard, colorPlayed && styles.playedCard]}>
               {/* Color header */}
               <View style={styles.colorHeader}>
                 <View 
@@ -646,6 +611,9 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
     marginBottom: 16,
+  },
+  playedCard: {
+    opacity: 0.65,
   },
   colorHeader: {
     flexDirection: 'row',

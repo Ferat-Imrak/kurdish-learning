@@ -152,12 +152,13 @@ export default function AlphabetPage() {
     timeWeight: 50,
     audioMultiplier: 1.35, // 50% / 37 audios ≈ 1.35% per audio
   };
-  
-  // Initialize refs - will be restored in useEffect
+
+  const [playedKeysSnapshot, setPlayedKeysSnapshot] = useState<string[]>(() => getLessonProgress(LESSON_ID).playedAudioKeys || []);
+
   const storedProgress = getLessonProgress(LESSON_ID);
   const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
   const startTimeRef = useRef<number>(estimatedStartTime);
-  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set((storedProgress.playedAudioKeys || []) as string[]));
   // Base audio plays estimated from stored progress
   const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
 
@@ -180,95 +181,52 @@ export default function AlphabetPage() {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS');
     }
     
-    // Restore refs from stored progress
     const currentProgress = getLessonProgress(LESSON_ID);
     const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig);
     startTimeRef.current = estimatedStartTime;
     baseAudioPlaysRef.current = estimatedAudioPlays;
-    
-    console.log('🔄 Restored refs:', {
-      estimatedAudioPlays,
-      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
-      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
-    });
+    if (currentProgress.playedAudioKeys?.length) {
+      uniqueAudiosPlayedRef.current = new Set(currentProgress.playedAudioKeys);
+      setPlayedKeysSnapshot(currentProgress.playedAudioKeys);
+    }
   }, [isAuthenticated]);
 
   const calculateProgress = () => {
-    // Get current progress to access latest timeSpent
+    // Progress from persisted played keys (exact count) + time
+    const totalUniqueAudios = uniqueAudiosPlayedRef.current.size;
+    const effectiveUniqueAudios = Math.min(totalUniqueAudios, progressConfig.totalAudios);
+    const audioProgress = Math.min(50, (effectiveUniqueAudios / progressConfig.totalAudios) * 50);
+
     const currentProgress = getLessonProgress(LESSON_ID);
-    
-    // Calculate total time spent (base + session)
     const baseTimeSpent = currentProgress?.timeSpent || 0;
     const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
     const totalTimeSpent = baseTimeSpent + sessionTimeMinutes;
-    
-    // Calculate progress from ACTUAL STATE, not from stored baseProgress
-    
-    // 1. Audio progress: Calculate from total unique audios played (base + new)
-    const totalUniqueAudios = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size;
-    const effectiveUniqueAudios = Math.min(totalUniqueAudios, progressConfig.totalAudios);
-    const audioProgress = Math.min(50, (effectiveUniqueAudios / progressConfig.totalAudios) * 50);
-    
-    // 2. Time progress: Calculate from total time spent (max 50%, 5 minutes = 50%)
     const timeProgress = Math.min(50, totalTimeSpent * 10);
-    
-    // 3. Total progress = audio + time (capped at 100%)
-    const totalProgress = Math.min(100, audioProgress + timeProgress);
-    
-    console.log('📊 Progress calculation (from state):', {
-      totalUniqueAudios,
-      effectiveUniqueAudios,
-      audioProgress: audioProgress.toFixed(2),
-      totalTimeSpent,
-      timeProgress: timeProgress.toFixed(2),
-      totalProgress: totalProgress.toFixed(2),
-    });
-    
-    return totalProgress;
+
+    return Math.min(100, audioProgress + timeProgress);
   };
 
   const handleAudioPlay = (audioKey: string) => {
-    // Track unique audios played (only count new ones) - check BEFORE adding
-    if (uniqueAudiosPlayedRef.current.has(audioKey)) {
-      // Already played this audio, don't update progress
-      console.log('🔇 Audio already played, skipping:', audioKey);
-      return;
-    }
-    
-    console.log('🔊 New unique audio played:', audioKey, 'Total unique:', uniqueAudiosPlayedRef.current.size + 1);
+    if (uniqueAudiosPlayedRef.current.has(audioKey)) return;
     uniqueAudiosPlayedRef.current.add(audioKey);
-    
+    setPlayedKeysSnapshot(Array.from(uniqueAudiosPlayedRef.current));
+
     const currentProgress = getLessonProgress(LESSON_ID);
-    
-    // Calculate total time spent (base + session)
     const baseTimeSpent = currentProgress.timeSpent || 0;
     const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
-    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes;
-    const safeTimeSpent = Math.min(1000, totalTimeSpent);
-    
+    const safeTimeSpent = Math.min(1000, baseTimeSpent + sessionTimeMinutes);
     const progress = calculateProgress();
-    const status = currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS';
-    
-    console.log('📊 Progress update:', {
-      progress,
-      uniqueAudios: uniqueAudiosPlayedRef.current.size,
-      audioKey,
-    });
-    
-    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent);
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS');
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent, Array.from(uniqueAudiosPlayedRef.current));
   };
 
   const progress = getLessonProgress(LESSON_ID);
-  
-  // Calculate learned count from actual unique audios (includes letters + comparisons)
-  const estimatedBaseCount = Math.min(baseAudioPlaysRef.current, progressConfig.totalAudios);
-  const newUniqueAudios = uniqueAudiosPlayedRef.current.size;
-  const learnedCount = Math.min(estimatedBaseCount + newUniqueAudios, progressConfig.totalAudios);
+  const learnedCount = Math.min(progressConfig.totalAudios, uniqueAudiosPlayedRef.current.size);
 
   const renderLetter = ({ item }: { item: Letter }) => {
     const audioFile = getLetterAudioFile(item.glyph);
-    // Use letter glyph as unique key for tracking
     const audioKey = `letter-${item.glyph}`;
+    const alreadyPlayed = playedKeysSnapshot.includes(audioKey);
     return (
       <LetterCard
         glyph={item.glyph}
@@ -277,6 +235,7 @@ export default function AlphabetPage() {
         audioFile={audioFile}
         audioAssets={audioAssets}
         onPlay={() => handleAudioPlay(audioKey)}
+        style={alreadyPlayed ? styles.playedCard : undefined}
       />
     );
   };
@@ -526,6 +485,9 @@ const styles = StyleSheet.create({
   },
   progressBarComplete: {
     color: '#10b981',
+  },
+  playedCard: {
+    opacity: 0.65,
   },
   progressBarDivider: {
     width: 1,

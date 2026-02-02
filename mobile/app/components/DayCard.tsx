@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Animated, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { Asset } from 'expo-asset';
@@ -9,6 +9,8 @@ interface DayCardProps {
   audioFile: string;
   audioAssets: Record<string, any>;
   onPlay?: () => void;
+  /** Optional style for dimming when already played */
+  style?: ViewStyle;
 }
 
 export default function DayCard({
@@ -16,6 +18,7 @@ export default function DayCard({
   audioFile,
   audioAssets,
   onPlay,
+  style,
 }: DayCardProps) {
   const [playing, setPlaying] = useState(false);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
@@ -119,7 +122,7 @@ export default function DayCard({
       onPress={handlePress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      style={styles.pressable}
+      style={[styles.pressable, style ?? undefined]}
     >
       <Animated.View
         style={[

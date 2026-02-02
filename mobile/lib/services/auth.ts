@@ -12,6 +12,7 @@ export interface RegisterData {
   username: string;
   email: string;
   password: string;
+  plan?: 'monthly' | 'yearly';
 }
 
 export interface AuthResponse {
@@ -103,6 +104,7 @@ export const register = async (data: RegisterData): Promise<AuthResponse> => {
       name: data.username, // Backend expects 'name' field
       email: data.email,
       password: data.password,
+      ...(data.plan && { plan: data.plan }),
     });
 
     if (__DEV__) {

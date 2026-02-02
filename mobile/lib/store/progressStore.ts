@@ -11,6 +11,8 @@ export interface LessonProgress {
   lastAccessed: Date;
   score?: number;
   timeSpent: number; // in minutes
+  /** Persisted set of audio keys already played (for dimming and counting only new plays) */
+  playedAudioKeys?: string[];
 }
 
 interface ProgressState {
@@ -22,7 +24,8 @@ interface ProgressState {
     progress: number,
     status?: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED',
     score?: number,
-    timeSpent?: number
+    timeSpent?: number,
+    playedAudioKeys?: string[]
   ) => Promise<void>;
   getLessonProgress: (lessonId: string) => LessonProgress;
   getTotalTimeSpent: () => number;
@@ -32,35 +35,43 @@ interface ProgressState {
   syncFromBackend: () => Promise<void>;
 }
 
-// Helper to merge progress (take highest progress, latest timestamp, accumulate time)
+// Helper to merge progress: never drop progress (take highest progress, latest timestamp, max time, union playedAudioKeys)
 function mergeProgress(local: LessonProgress, remote: LessonProgress): LessonProgress {
   const localTime = local.lastAccessed.getTime();
   const remoteTime = remote.lastAccessed.getTime();
-  
+
   // Take highest progress
   const mergedProgress = Math.max(local.progress, remote.progress);
-  
+
   // Take latest timestamp
   const mergedLastAccessed = localTime > remoteTime ? local.lastAccessed : remote.lastAccessed;
-  
-  // Accumulate time spent
-  const mergedTimeSpent = local.timeSpent + remote.timeSpent;
-  
+
+  // timeSpent is stored as total minutes per lesson; take max to avoid double-counting
+  const mergedTimeSpent = Math.max(local.timeSpent, remote.timeSpent);
+
   // Take highest score
   const mergedScore = Math.max(local.score || 0, remote.score || 0);
-  
+
+  // Union of playedAudioKeys (backend doesn't store this; local/remote may have different sets)
+  const allPlayedKeys = new Set<string>([
+    ...(local.playedAudioKeys || []),
+    ...(remote.playedAudioKeys || []),
+  ]);
+  const mergedPlayedAudioKeys = allPlayedKeys.size > 0 ? Array.from(allPlayedKeys) : undefined;
+
   // Status: if either is COMPLETED, use COMPLETED, else use the one with higher progress
   const mergedStatus = local.status === 'COMPLETED' || remote.status === 'COMPLETED'
     ? 'COMPLETED'
     : mergedProgress > 0 ? 'IN_PROGRESS' : 'NOT_STARTED';
-  
+
   return {
     lessonId: local.lessonId,
     progress: mergedProgress,
     status: mergedStatus,
     lastAccessed: mergedLastAccessed,
     score: mergedScore > 0 ? mergedScore : undefined,
-    timeSpent: mergedTimeSpent
+    timeSpent: mergedTimeSpent,
+    ...(mergedPlayedAudioKeys && { playedAudioKeys: mergedPlayedAudioKeys }),
   };
 }
 
@@ -240,9 +251,11 @@ export const useProgressStore = create<ProgressState>((set, get) => ({
           const parsed = JSON.parse(stored);
           // Convert lastAccessed strings back to Date objects
           const progressWithDates = Object.keys(parsed).reduce((acc, key) => {
+            const p = parsed[key] as any;
             acc[key] = {
-              ...parsed[key],
-              lastAccessed: new Date(parsed[key].lastAccessed),
+              ...p,
+              lastAccessed: new Date(p.lastAccessed),
+              ...(p.playedAudioKeys && Array.isArray(p.playedAudioKeys) && { playedAudioKeys: p.playedAudioKeys }),
             };
             return acc;
           }, {} as Record<string, LessonProgress>);
@@ -268,7 +281,8 @@ export const useProgressStore = create<ProgressState>((set, get) => ({
     progress: number,
     status: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' = 'IN_PROGRESS',
     score?: number,
-    timeSpent?: number
+    timeSpent?: number,
+    playedAudioKeys?: string[]
   ) => {
     const user = useAuthStore.getState().user;
     if (!user?.email) return;
@@ -276,12 +290,12 @@ export const useProgressStore = create<ProgressState>((set, get) => ({
     const clampedProgress = Math.max(0, Math.min(100, progress));
     const currentProgress = get().lessonProgress[lessonId];
     const currentTimeSpent = currentProgress?.timeSpent || 0;
-    
-    // Accumulate time spent if provided, otherwise keep existing
-    const newTimeSpent = timeSpent !== undefined 
-      ? currentTimeSpent + timeSpent  // Add to existing time
-      : currentTimeSpent;  // Keep existing time
-    
+
+    // Callers pass total time spent (base + session); use as replacement, not delta
+    const newTimeSpent = timeSpent !== undefined
+      ? Math.min(1000, Math.max(0, timeSpent))
+      : currentTimeSpent;
+
     const newProgress: LessonProgress = {
       lessonId,
       progress: clampedProgress,
@@ -289,6 +303,7 @@ export const useProgressStore = create<ProgressState>((set, get) => ({
       lastAccessed: new Date(),
       score: score !== undefined ? score : currentProgress?.score,
       timeSpent: newTimeSpent,
+      ...(playedAudioKeys && playedAudioKeys.length > 0 && { playedAudioKeys }),
     };
 
     const updatedProgress = {
@@ -332,24 +347,24 @@ export const useProgressStore = create<ProgressState>((set, get) => ({
 
         // Update with merged data from backend
         if (response.data.progress) {
+          const localProgress = get().lessonProgress;
           const mergedProgress: Record<string, LessonProgress> = {};
           for (const [id, p] of Object.entries(response.data.progress)) {
             const progressData = p as any;
             // Safeguard: if timeSpent is unreasonably large (> 10000 minutes), reset it
-            // This prevents corrupted values from breaking the calculation
             const safeTimeSpent = (progressData.timeSpent && progressData.timeSpent > 10000) ? 0 : (progressData.timeSpent || 0);
+            const existing = localProgress[id];
             mergedProgress[id] = {
               lessonId: id,
               progress: progressData.progress || 0,
               status: progressData.status || 'NOT_STARTED',
               lastAccessed: new Date(progressData.lastAccessed),
-              // CRITICAL: Ignore score from backend - it's overall progress, not practice
-              // Only set score when practice is explicitly completed
               score: undefined,
-              timeSpent: safeTimeSpent
+              timeSpent: safeTimeSpent,
+              ...(existing?.playedAudioKeys?.length && { playedAudioKeys: existing.playedAudioKeys }),
             };
           }
-          
+
           const current = get().lessonProgress;
           const final: Record<string, LessonProgress> = {};
           for (const id of Object.keys({ ...current, ...mergedProgress })) {

@@ -192,15 +192,14 @@ export default function NaturePage() {
     timeMultiplier: 10, // 50% / 5 minutes = 10% per minute
   };
   
-  // Initialize refs - will be restored in useEffect
+  // Snapshot of played keys for dimming (restored from storage on mount)
+  const [playedKeysSnapshot, setPlayedKeysSnapshot] = useState<string[]>(() => getLessonProgress(LESSON_ID).playedAudioKeys || []);
+
   const storedProgress = getLessonProgress(LESSON_ID);
   const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
   const startTimeRef = useRef<number>(estimatedStartTime);
-  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
-  // Base audio plays estimated from stored progress
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set((storedProgress.playedAudioKeys || []) as string[]));
   const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
-  // Track previous unique audio count to calculate increment
-  const previousUniqueAudiosCountRef = useRef<number>(0);
 
   // Initialize audio mode
   useEffect(() => {
@@ -269,9 +268,9 @@ export default function NaturePage() {
         }
       });
 
-      // Track unique audios played
       if (!uniqueAudiosPlayedRef.current.has(audioKey)) {
         uniqueAudiosPlayedRef.current.add(audioKey);
+        setPlayedKeysSnapshot(Array.from(uniqueAudiosPlayedRef.current));
         handleAudioPlay();
       }
     } catch (error) {
@@ -283,53 +282,24 @@ export default function NaturePage() {
   const handleAudioPlay = () => {
     const currentProgress = getLessonProgress(LESSON_ID);
     const { progress, timeSpent } = calculateProgress();
-    const status = currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS';
-    updateLessonProgress(LESSON_ID, progress, status, undefined, timeSpent);
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS');
+    updateLessonProgress(LESSON_ID, progress, status, undefined, timeSpent, Array.from(uniqueAudiosPlayedRef.current));
   };
 
   const calculateProgress = () => {
     const currentProgress = getLessonProgress(LESSON_ID);
-    const baseProgress = currentProgress.progress || 0;
-    const baseTimeSpent = currentProgress.timeSpent || 0;
-    
-    // Calculate session time (minutes)
+    const baseTimeSpent = currentProgress?.timeSpent || 0;
     const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
-    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes;
-    
-    // Safeguard: if baseTimeSpent is unreasonably large, reset to 0
     const safeBaseTimeSpent = baseTimeSpent > 10000 ? 0 : baseTimeSpent;
     const safeTotalTimeSpent = safeBaseTimeSpent + sessionTimeMinutes;
-    
-    // Calculate new unique audios played since last update
-    const currentUniqueAudiosCount = baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size;
-    const newUniqueAudios = currentUniqueAudiosCount - previousUniqueAudiosCountRef.current;
-    
-    // Calculate new progress from current session activity
-    // Audio progress: max 50% (cap at 50% total for audio+time)
-    const maxAudioTimeProgress = 100; // 50% audio + 50% time = 100% max (no practice)
-    const currentAudioTimeProgress = Math.min(maxAudioTimeProgress, 
-      Math.min(50, currentUniqueAudiosCount * progressConfig.audioMultiplier) +
-      Math.min(50, safeTotalTimeSpent * progressConfig.timeMultiplier)
-    );
-    
-    // Only add new progress if there's room below the cap
-    const baseAudioTimeProgress = Math.min(maxAudioTimeProgress,
-      Math.min(50, baseAudioPlaysRef.current * progressConfig.audioMultiplier) +
-      Math.min(50, safeBaseTimeSpent * progressConfig.timeMultiplier)
-    );
-    
-    const newAudioTimeProgress = Math.max(0, currentAudioTimeProgress - baseAudioTimeProgress);
-    
-    // Total progress = base + new session activity (capped at 100% since no practice)
-    const totalProgress = Math.min(100, baseProgress + newAudioTimeProgress);
-    
-    // Update previous count for next calculation
-    previousUniqueAudiosCountRef.current = currentUniqueAudiosCount;
-    
-    return {
-      progress: totalProgress,
-      timeSpent: safeTotalTimeSpent,
-    };
+
+    const totalAudios = progressConfig.totalAudios;
+    const currentUniqueAudiosCount = uniqueAudiosPlayedRef.current.size;
+    const audioProgress = Math.min(50, (currentUniqueAudiosCount / totalAudios) * 50);
+    const timeProgress = Math.min(50, safeTotalTimeSpent * progressConfig.timeMultiplier);
+    const totalProgress = Math.min(100, audioProgress + timeProgress);
+
+    return { progress: totalProgress, timeSpent: safeTotalTimeSpent };
   };
 
   const filteredItems = useMemo(() => {
@@ -340,10 +310,8 @@ export default function NaturePage() {
 
   const displayedItems = showAllItems ? filteredItems : filteredItems.slice(0, 12);
 
-  // Calculate total examples count for Learn progress
   const totalExamples = natureItems.length + naturePhrases.length;
-  // Show accumulated unique audios (base + new in this session)
-  const learnedCount = Math.min(baseAudioPlaysRef.current + uniqueAudiosPlayedRef.current.size, totalExamples);
+  const learnedCount = Math.min(totalExamples, uniqueAudiosPlayedRef.current.size);
 
   const progress = getLessonProgress(LESSON_ID);
 
@@ -444,8 +412,9 @@ export default function NaturePage() {
           <View style={styles.natureGrid}>
             {displayedItems.map((item, index) => {
               const audioKey = `nature-${item.id}`;
+              const alreadyPlayed = playedKeysSnapshot.includes(audioKey);
               return (
-                <View key={item.id} style={styles.natureCard}>
+                <View key={item.id} style={[styles.natureCard, alreadyPlayed && styles.playedCard]}>
                   <View style={styles.natureTextContainer}>
                     <Text style={styles.natureKurdish}>{item.kurdish}</Text>
                     <Text style={styles.natureEnglish}>{item.english}</Text>
@@ -495,8 +464,9 @@ export default function NaturePage() {
           <View style={styles.phrasesList}>
             {naturePhrases.map((phrase) => {
               const audioKey = `phrase-${phrase.id}`;
+              const alreadyPlayed = playedKeysSnapshot.includes(audioKey);
               return (
-                <View key={phrase.id} style={styles.phraseCard}>
+                <View key={phrase.id} style={[styles.phraseCard, alreadyPlayed && styles.playedCard]}>
                   <View style={styles.phraseContent}>
                     <Text style={styles.phraseKurdish}>{phrase.kurdish}</Text>
                     <Text style={styles.phraseEnglish}>{phrase.english}</Text>
@@ -763,6 +733,7 @@ const styles = StyleSheet.create({
   phrasesList: {
     gap: 12,
   },
+  playedCard: { opacity: 0.65 },
   phraseCard: {
     backgroundColor: '#f9fafb',
     borderRadius: 12,

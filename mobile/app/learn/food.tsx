@@ -19,7 +19,7 @@ import { Audio } from 'expo-av';
 import { Asset } from 'expo-asset';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
-import { restoreRefsFromProgress, getLearnedCount } from '../../lib/utils/progressHelper';
+import { restoreRefsFromProgress } from '../../lib/utils/progressHelper';
 
 const { width } = Dimensions.get('window');
 
@@ -265,11 +265,10 @@ export default function FoodPage() {
   const storedProgress = getLessonProgress(LESSON_ID);
   const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
   const startTimeRef = useRef<number>(estimatedStartTime);
-  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
-  // Base audio plays estimated from stored progress
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set((storedProgress.playedAudioKeys || []) as string[]));
   const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
-  // Track previous unique audio count to calculate increment
   const previousUniqueAudiosCountRef = useRef<number>(0);
+  const [playedKeysSnapshot, setPlayedKeysSnapshot] = useState<string[]>(() => (getLessonProgress(LESSON_ID).playedAudioKeys || []) as string[]);
 
   // Initialize audio mode
   useEffect(() => {
@@ -304,19 +303,14 @@ export default function FoodPage() {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS');
     }
     
-    // Restore refs from stored progress (in case progress was updated after component mount)
     const currentProgress = getLessonProgress(LESSON_ID);
     const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig);
     startTimeRef.current = estimatedStartTime;
     baseAudioPlaysRef.current = estimatedAudioPlays;
-    
-    console.log('🔄 Restored refs:', {
-      estimatedAudioPlays,
-      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
-      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
-    });
-    
-    // Note: uniqueAudiosPlayedRef starts fresh each session, but we account for base progress
+    if (currentProgress.playedAudioKeys?.length) {
+      uniqueAudiosPlayedRef.current = new Set(currentProgress.playedAudioKeys);
+      setPlayedKeysSnapshot(currentProgress.playedAudioKeys);
+    }
   }, [isAuthenticated]);
 
   const playAudio = async (audioFile: string, audioText: string) => {
@@ -353,9 +347,9 @@ export default function FoodPage() {
       setSound(newSound);
       setPlayingAudio(audioFile);
       
-      // Track unique audios played (only count new ones) - use filename as key
       if (!uniqueAudiosPlayedRef.current.has(filename)) {
         uniqueAudiosPlayedRef.current.add(filename);
+        setPlayedKeysSnapshot(Array.from(uniqueAudiosPlayedRef.current));
         handleAudioPlay();
       }
 
@@ -373,41 +367,9 @@ export default function FoodPage() {
   };
 
   const calculateProgress = () => {
-    // Get current progress to access latest timeSpent
-    const currentProgress = getLessonProgress(LESSON_ID);
-    
-    // Calculate session time (time since restored start time)
-    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
-    
-    // Audio progress: new unique audios played this session only
+    const totalAudios = progressConfig.totalAudios;
     const currentUniqueAudios = uniqueAudiosPlayedRef.current.size;
-    const newUniqueAudios = currentUniqueAudios - previousUniqueAudiosCountRef.current;
-    const newAudioProgress = Math.min(50, newUniqueAudios * 0.37);
-    // Update previous count for next calculation
-    previousUniqueAudiosCountRef.current = currentUniqueAudios;
-    
-    // Time progress: new session time only (max 50%, 5 minutes = 50%)
-    const newTimeProgress = Math.min(50, sessionTimeMinutes * 10);
-    
-    // Get base progress from stored progress
-    const baseProgress = currentProgress?.progress || 0;
-    
-    // For lessons without practice: audio + time can reach 100%
-    // Ensure that when all audios are played, audio progress contributes its full weight
-    let effectiveAudioCount = currentUniqueAudios;
-    if (effectiveAudioCount >= 135 && 135 > 0) {
-      effectiveAudioCount = 135; // Cap at total
-      // Force full audio contribution when all are played
-      const fullAudioProgress = 50;
-      const calculatedProgress = Math.min(100, baseProgress + fullAudioProgress + newTimeProgress);
-      return Math.max(baseProgress, calculatedProgress);
-    }
-    
-    // Calculate new progress from session activity
-    const calculatedProgress = Math.min(100, baseProgress + newAudioProgress + newTimeProgress);
-    
-    // Use Math.max to prevent progress from dropping due to new calculation method
-    return Math.max(baseProgress, calculatedProgress);
+    return Math.min(100, Math.round((currentUniqueAudios / totalAudios) * 100));
   };
 
   const handleAudioPlay = () => {
@@ -422,8 +384,8 @@ export default function FoodPage() {
     const safeTimeSpent = Math.min(1000, totalTimeSpent);
     
     const progress = calculateProgress();
-    const status = currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS';
-    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent);
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS');
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent, Array.from(uniqueAudiosPlayedRef.current));
   };
 
   const categories = ['all', 'fruit', 'vegetable', 'protein', 'dairy', 'grain', 'drink'];
@@ -434,18 +396,8 @@ export default function FoodPage() {
   
   const displayedFoods = showAllFoods ? filteredFoods : filteredFoods.slice(0, 12);
 
-  // Calculate total examples count for Learn progress
   const totalExamples = foodItems.length + mealTimes.length + foodQuestions.length + responses.length;
-  // Use getLearnedCount to get estimated base + new unique audios
-  const currentProgress = getLessonProgress(LESSON_ID);
-  const progressState = {
-    uniqueAudiosPlayed: uniqueAudiosPlayedRef.current,
-    sessionStartTime: startTimeRef.current,
-    baseProgress: currentProgress?.progress || 0,
-    baseTimeSpent: currentProgress?.timeSpent || 0,
-    practiceScore: currentProgress?.score,
-  };
-  const learnedCount = getLearnedCount(progressState, totalExamples);
+  const learnedCount = Math.min(totalExamples, uniqueAudiosPlayedRef.current.size);
 
   const progress = getLessonProgress(LESSON_ID);
 
@@ -521,9 +473,13 @@ export default function FoodPage() {
           </View>
           <View style={styles.foodGrid}>
             {displayedFoods.map((item, index) => {
+              let filename = getAudioFilename(item.ku);
+              if (item.ku === "şîr") filename = "shir-milk";
+              else if (item.ku === "şîv") filename = "shiv";
+              const alreadyPlayed = playedKeysSnapshot.includes(filename);
               const audioKey = `food-${item.ku}`;
               return (
-                <View key={index} style={styles.foodCard}>
+                <View key={index} style={[styles.foodCard, alreadyPlayed && styles.playedCard]}>
                   <View style={styles.foodTextContainer}>
                     <Text style={styles.foodKurdish}>{item.ku}</Text>
                     <Text style={styles.foodEnglish}>{item.en}</Text>
@@ -807,6 +763,9 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
     justifyContent: 'space-between',
     minHeight: 140,
+  },
+  playedCard: {
+    opacity: 0.65,
   },
   foodTextContainer: {
     alignItems: 'center',

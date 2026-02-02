@@ -156,15 +156,13 @@ export default function AnimalsPage() {
     audioMultiplier: 0.91, // 30% / 33 audios ≈ 0.91% per audio
   };
   
-  // Initialize refs - will be restored in useEffect
+  const [playedKeysSnapshot, setPlayedKeysSnapshot] = useState<string[]>(() => getLessonProgress(LESSON_ID).playedAudioKeys || []);
+
   const storedProgress = getLessonProgress(LESSON_ID);
   const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
   const startTimeRef = useRef<number>(estimatedStartTime);
-  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
-  // Base audio plays estimated from stored progress
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set((storedProgress.playedAudioKeys || []) as string[]));
   const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
-  // Track previous unique audio count to calculate increment
-  const previousUniqueAudiosCountRef = useRef<number>(0);
 
   // Generate all possible exercise items from animals
   const allExerciseItems: ExerciseItem[] = animals.map(animal => ({
@@ -208,19 +206,14 @@ export default function AnimalsPage() {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS');
     }
     
-    // Restore refs from stored progress (in case progress was updated after component mount)
     const currentProgress = getLessonProgress(LESSON_ID);
     const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig);
     startTimeRef.current = estimatedStartTime;
     baseAudioPlaysRef.current = estimatedAudioPlays;
-    
-    console.log('🔄 Restored refs:', {
-      estimatedAudioPlays,
-      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
-      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
-    });
-    
-    // Note: uniqueAudiosPlayedRef starts fresh each session, but we account for base progress
+    if (currentProgress.playedAudioKeys?.length) {
+      uniqueAudiosPlayedRef.current = new Set(currentProgress.playedAudioKeys);
+      setPlayedKeysSnapshot(currentProgress.playedAudioKeys);
+    }
   }, [isAuthenticated]);
 
   // Initialize first exercise when switching to practice mode
@@ -298,9 +291,9 @@ export default function AnimalsPage() {
       setSound(newSound);
       setPlayingAudio(audioKey);
       
-      // Track unique audios played (only count new ones)
       if (!uniqueAudiosPlayedRef.current.has(audioKey)) {
         uniqueAudiosPlayedRef.current.add(audioKey);
+        setPlayedKeysSnapshot(Array.from(uniqueAudiosPlayedRef.current));
         handleAudioPlay();
       }
 
@@ -318,9 +311,15 @@ export default function AnimalsPage() {
   };
 
   const calculateProgress = (practiceScore?: number) => {
-    // Get current progress to access latest timeSpent
     const currentProgress = getLessonProgress(LESSON_ID);
-    
+    const totalAudios = progressConfig.totalAudios; // 33
+
+    // When all audios are played, persist 100% so progress does not drop after remount
+    if (uniqueAudiosPlayedRef.current.size >= totalAudios) {
+      return 100;
+    }
+
+    // Get current progress to access latest timeSpent
     console.log('🔍 calculateProgress called:', {
       practiceScore,
       storedProgress: currentProgress?.progress,
@@ -331,54 +330,15 @@ export default function AnimalsPage() {
     // Calculate session time (time since restored start time)
     const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
     
-    // Audio progress: new unique audios played this session only
-    // Each unique audio = 0.91% (30% max / 33 total audios)
-    // CRITICAL: Only calculate progress for the INCREMENT since last update
     const currentUniqueAudios = uniqueAudiosPlayedRef.current.size;
-    const newUniqueAudios = currentUniqueAudios - previousUniqueAudiosCountRef.current;
-    const newAudioProgress = Math.min(30, newUniqueAudios * 0.91);
-    // Update previous count for next calculation
-    previousUniqueAudiosCountRef.current = currentUniqueAudios;
-    
-    // Time progress: new session time only (max 20%, 4 minutes = 20%)
+    const audioProgress = Math.min(30, (currentUniqueAudios / totalAudios) * 30);
     const newTimeProgress = Math.min(20, sessionTimeMinutes * 5);
-    
-    // Get base progress from stored progress
-    const baseProgress = currentProgress?.progress || 0;
-    
-    // CRITICAL FIX: Only use score for practice if practice was JUST completed (practiceScore parameter)
-    // The backend stores overall progress in the score field, so we can't trust stored score
-    // as practice completion unless we know practice was just done.
-    // Ignore stored score entirely - only use it if practiceScore is explicitly provided.
-    // If practice is completed (status is COMPLETED and score >= 70%), give full 50% practice progress
     const storedPracticeScore = currentProgress?.score;
     const isPracticeCompleted = currentProgress?.status === 'COMPLETED' && storedPracticeScore !== undefined && storedPracticeScore >= 70;
-    const practiceProgress = practiceScore !== undefined 
-      ? (practiceScore >= 70 ? 50 : Math.min(50, practiceScore * 0.5))  // If score >= 70%, give full 50%; otherwise scale
-      : (isPracticeCompleted ? 50 : 0);  // If practice was completed before with >= 70%, give full 50%
-    
-    // Calculate new total: base progress (which already includes previous audio+time) + new audio + new time + practice
-    // But we need to cap audio+time at 50% total
-    // If baseProgress is already at 50%, we can't add more audio+time progress
-    const currentAudioTimeProgress = Math.min(50, baseProgress); // Cap base at 50% (audio+time max)
-    // Only add NEW progress (newAudioProgress + newTimeProgress), not the full base
-    const newAudioTimeProgress = Math.min(50 - currentAudioTimeProgress, newAudioProgress + newTimeProgress);
-    const totalAudioTime = Math.min(50, currentAudioTimeProgress + newAudioTimeProgress);
-    const totalProgress = Math.min(100, totalAudioTime + practiceProgress);
-    
-    console.log('📊 Progress calculation breakdown:', {
-      newUniqueAudios,
-      newAudioProgress: newAudioProgress.toFixed(2),
-      sessionTimeMinutes,
-      newTimeProgress: newTimeProgress.toFixed(2),
-      baseProgress,
-      currentAudioTimeProgress: currentAudioTimeProgress.toFixed(2),
-      newAudioTimeProgress: newAudioTimeProgress.toFixed(2),
-      practiceProgress: practiceProgress.toFixed(2),
-      totalAudioTime: totalAudioTime.toFixed(2),
-      totalProgress: totalProgress.toFixed(2),
-    });
-    
+    const practiceProgress = practiceScore !== undefined
+      ? (practiceScore >= 70 ? 50 : Math.min(50, practiceScore * 0.5))
+      : (isPracticeCompleted ? 50 : 0);
+    const totalProgress = Math.min(100, audioProgress + newTimeProgress + practiceProgress);
     return totalProgress;
   };
 
@@ -392,7 +352,7 @@ export default function AnimalsPage() {
     
     // Don't pass practiceScore - we're just playing audio, not doing practice
     const progress = calculateProgress(undefined);
-    const status = currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS';
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS');
     
     // Calculate time spent for this update
     // timeSpent is stored in minutes, so we just add session time
@@ -414,7 +374,7 @@ export default function AnimalsPage() {
       totalTimeSpent,
     });
     
-    updateLessonProgress(LESSON_ID, progress, status, existingPracticeScore, totalTimeSpent);
+    updateLessonProgress(LESSON_ID, progress, status, existingPracticeScore, totalTimeSpent, Array.from(uniqueAudiosPlayedRef.current));
   };
 
   // Generate 20 unique questions for practice session
@@ -483,13 +443,8 @@ export default function AnimalsPage() {
     startPracticeSession();
   };
 
-  // Calculate total examples count for Learn progress
   const totalExamples = animals.length + animalQuestions.length;
-  // Learned count = estimated base count from previous sessions + new unique audios this session
-  // Use baseAudioPlaysRef which stores the estimated audio plays from previous sessions
-  const estimatedBaseCount = Math.min(baseAudioPlaysRef.current, totalExamples);
-  const newUniqueAudios = uniqueAudiosPlayedRef.current.size;
-  const learnedCount = Math.min(estimatedBaseCount + newUniqueAudios, totalExamples);
+  const learnedCount = Math.min(totalExamples, uniqueAudiosPlayedRef.current.size);
 
   const progress = getLessonProgress(LESSON_ID);
 
@@ -632,8 +587,9 @@ export default function AnimalsPage() {
               <View style={styles.questionsList}>
                 {animalQuestions.map((item, index) => {
                   const audioKey = `question-${item.audioFile}`;
+                  const alreadyPlayed = playedKeysSnapshot.includes(audioKey);
                   return (
-                    <View key={index} style={styles.questionCard}>
+                    <View key={index} style={[styles.questionCard, alreadyPlayed && styles.playedCard]}>
                       <View style={styles.questionTextContainer}>
                         <Text style={styles.questionKurdish}>{item.ku}</Text>
                         <Text style={styles.questionEnglish}>{item.en}</Text>
@@ -853,6 +809,7 @@ const styles = StyleSheet.create({
     color: '#111827',
   },
   progressBarComplete: { color: '#10b981' },
+  playedCard: { opacity: 0.65 },
   progressBarDivider: {
     width: 1,
     height: 24,

@@ -146,10 +146,11 @@ router.post('/login', [
         id: user.id,
         email: user.email,
         name: user.name,
-        username: user.username,
+        username: (user as any).username ?? user.name,
         role: user.role,
         subscriptionPlan: user.subscriptionPlan,
-        subscriptionStatus: 'ACTIVE'
+        subscriptionStatus: 'ACTIVE',
+        image: (user as any).image ?? undefined
       },
       token
     })
@@ -159,18 +160,28 @@ router.post('/login', [
   }
 })
 
+// Helper: get userId from Bearer token (same as /me)
+async function getUserIdFromToken(req: Request): Promise<string | null> {
+  const token = req.headers.authorization?.split(' ')[1]
+  if (!token) return null
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as { userId: string }
+    return decoded.userId
+  } catch {
+    return null
+  }
+}
+
 // Get current user
 router.get('/me', async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1]
-    
-    if (!token) {
+    const userId = await getUserIdFromToken(req)
+    if (!userId) {
       return res.status(401).json({ message: 'No token provided' })
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as any
     const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
+      where: { id: userId },
       include: {
         children: true
       }
@@ -186,12 +197,246 @@ router.get('/me', async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
+        image: (user as any).image ?? undefined,
         children: user.children
       }
     })
   } catch (error) {
     console.error('Get user error:', error)
     res.status(401).json({ message: 'Invalid token' })
+  }
+})
+
+// Update profile (name, email, image)
+router.put('/me', [
+  body('name').optional().trim().isLength({ min: 2 }),
+  body('email').optional().isEmail().normalizeEmail(),
+  body('image').optional().isString(),
+], async (req: Request, res: Response) => {
+  try {
+    const userId = await getUserIdFromToken(req)
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' })
+    }
+
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() })
+    }
+
+    const { name, email, image } = req.body
+    const updateData: { name?: string; email?: string; image?: string } = {}
+    if (name !== undefined) updateData.name = name
+    if (email !== undefined) {
+      const existing = await prisma.user.findUnique({ where: { email } })
+      if (existing && existing.id !== userId) {
+        return res.status(400).json({ message: 'Email already in use' })
+      }
+      updateData.email = email
+    }
+    if (image !== undefined) {
+      // Optional: limit base64 size (e.g. 512KB). Data URLs can be large.
+      if (typeof image === 'string' && image.length > 700_000) {
+        return res.status(400).json({ message: 'Image too large. Use a smaller photo.' })
+      }
+      updateData.image = image || null
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ message: 'No valid fields to update' })
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: updateData
+    })
+
+    res.json({
+      message: 'Profile updated successfully',
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        image: user.image ?? undefined
+      }
+    })
+  } catch (error: any) {
+    console.error('Update profile error:', error)
+    res.status(500).json({ message: error.message || 'Failed to update profile' })
+  }
+})
+
+// Change password
+router.put('/change-password', [
+  body('currentPassword').exists(),
+  body('newPassword').isLength({ min: 6 }),
+], async (req: Request, res: Response) => {
+  try {
+    const userId = await getUserIdFromToken(req)
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' })
+    }
+
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() })
+    }
+
+    const { currentPassword, newPassword } = req.body
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    })
+
+    if (!user || !user.passwordHash) {
+      return res.status(400).json({ message: 'No password set for this account' })
+    }
+
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash)
+    if (!valid) {
+      return res.status(400).json({ message: 'Current password is incorrect' })
+    }
+
+    const hashedNew = await bcrypt.hash(newPassword, 12)
+    await prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: hashedNew }
+    })
+
+    res.json({ message: 'Password changed successfully' })
+  } catch (error: any) {
+    console.error('Change password error:', error)
+    res.status(500).json({ message: error.message || 'Failed to change password' })
+  }
+})
+
+// Delete account
+router.delete('/me', async (req: Request, res: Response) => {
+  try {
+    const userId = await getUserIdFromToken(req)
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' })
+    }
+
+    await prisma.user.delete({
+      where: { id: userId }
+    })
+
+    res.json({ message: 'Account deleted successfully' })
+  } catch (error: any) {
+    console.error('Delete account error:', error)
+    res.status(500).json({ message: error.message || 'Failed to delete account' })
+  }
+})
+
+// Get subscription details
+router.get('/subscription', async (req: Request, res: Response) => {
+  try {
+    const userId = await getUserIdFromToken(req)
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' })
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { subscriptionPlan: true, subscriptionStatus: true, subscriptionEndDate: true }
+    })
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' })
+    }
+
+    let status = user.subscriptionStatus || 'ACTIVE'
+    const now = new Date()
+    if (user.subscriptionEndDate && now > user.subscriptionEndDate) {
+      status = 'EXPIRED'
+      await prisma.user.update({
+        where: { id: userId },
+        data: { subscriptionStatus: 'EXPIRED' }
+      })
+    }
+
+    res.json({
+      plan: user.subscriptionPlan || 'MONTHLY',
+      status,
+      endDate: user.subscriptionEndDate
+    })
+  } catch (error: any) {
+    console.error('Get subscription error:', error)
+    res.status(500).json({ message: error.message || 'Failed to get subscription' })
+  }
+})
+
+// Change subscription plan (monthly | yearly)
+router.put('/subscription/plan', [
+  body('plan').isIn(['monthly', 'yearly']),
+], async (req: Request, res: Response) => {
+  try {
+    const userId = await getUserIdFromToken(req)
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' })
+    }
+
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() })
+    }
+
+    const { plan } = req.body
+    const subscriptionPlan = plan === 'yearly' ? 'YEARLY' : 'MONTHLY'
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { subscriptionPlan }
+    })
+
+    res.json({
+      message: 'Subscription plan updated successfully',
+      plan: user.subscriptionPlan
+    })
+  } catch (error: any) {
+    console.error('Change plan error:', error)
+    res.status(500).json({ message: error.message || 'Failed to change subscription plan' })
+  }
+})
+
+// Cancel subscription (access until end date)
+router.post('/subscription/cancel', async (req: Request, res: Response) => {
+  try {
+    const userId = await getUserIdFromToken(req)
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' })
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { subscriptionStatus: true, subscriptionEndDate: true }
+    })
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' })
+    }
+
+    if (user.subscriptionStatus === 'CANCELED') {
+      return res.json({
+        message: 'Subscription is already canceled',
+        endDate: user.subscriptionEndDate
+      })
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: { subscriptionStatus: 'CANCELED' }
+    })
+
+    res.json({
+      message: 'Subscription canceled successfully. You will have access until your subscription end date.',
+      endDate: updated.subscriptionEndDate
+    })
+  } catch (error: any) {
+    console.error('Cancel subscription error:', error)
+    res.status(500).json({ message: error.message || 'Failed to cancel subscription' })
   }
 })
 

@@ -20,6 +20,11 @@ import { login as loginService } from '../../lib/services/auth';
 import { checkConnection, API_URL } from '../../lib/services/api';
 import { useAuthStore } from '../../lib/store/authStore';
 
+const SKY = '#EAF3FF';
+const SKY_DEEPER = '#d6e8ff';
+const TEXT_PRIMARY = '#0F172A';
+const TEXT_MUTED = '#64748B';
+
 export default function LoginScreen() {
   const router = useRouter();
   const { login } = useAuthStore();
@@ -132,39 +137,50 @@ export default function LoginScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+    <View style={styles.pageWrap}>
+      <LinearGradient
+        colors={[SKY, SKY_DEEPER, SKY]}
+        style={StyleSheet.absoluteFill}
+      />
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardView}
         >
-          <Animated.View style={{ opacity: fadeAnim }}>
-            {/* Header */}
-            <View style={styles.header}>
-              <Pressable
-                onPress={() => router.replace('/')}
-                style={({ pressed }) => [
-                  styles.backButton,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Ionicons name="arrow-back" size={24} color="#111827" />
-              </Pressable>
-              <Text style={styles.title}>Welcome Back</Text>
-              <Text style={styles.subtitle}>Sign in to continue</Text>
-            </View>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <Animated.View style={{ opacity: fadeAnim }}>
+              {/* Header: back (left) + title (center) */}
+              <View style={styles.header}>
+                <Pressable
+                  onPress={() => {
+                  if (router.canGoBack()) router.back();
+                  else router.replace('/');
+                }}
+                  style={({ pressed }) => [
+                    styles.backButton,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Ionicons name="chevron-back" size={24} color={TEXT_PRIMARY} />
+                </Pressable>
+                <View style={styles.headerTextWrap}>
+                  <Text style={styles.title}>Welcome Back</Text>
+                  <Text style={styles.subtitle}>Sign in to continue</Text>
+                </View>
+                <View style={styles.headerSpacer} />
+              </View>
 
-            {/* Form */}
+              {/* Form */}
             <View style={styles.form}>
               {/* Username/Email Input */}
               <View style={styles.inputContainer}>
                 <Text style={styles.label}>Username or Email</Text>
                 <View style={[styles.inputWrapper, errors.usernameOrEmail && styles.inputError]}>
-                  <Ionicons name="person-outline" size={20} color="#6b7280" style={styles.inputIcon} />
+                  <Ionicons name="person-outline" size={20} color={TEXT_MUTED} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     placeholder="Enter username or email"
@@ -192,7 +208,7 @@ export default function LoginScreen() {
               <View style={styles.inputContainer}>
                 <Text style={styles.label}>Password</Text>
                 <View style={[styles.inputWrapper, errors.password && styles.inputError]}>
-                  <Ionicons name="lock-closed-outline" size={20} color="#6b7280" style={styles.inputIcon} />
+                  <Ionicons name="lock-closed-outline" size={20} color={TEXT_MUTED} style={styles.inputIcon} />
                   <TextInput
                     ref={passwordInputRef}
                     style={styles.input}
@@ -217,7 +233,7 @@ export default function LoginScreen() {
                     <Ionicons
                       name={showPassword ? 'eye-outline' : 'eye-off-outline'}
                       size={20}
-                      color="#6b7280"
+                      color={TEXT_MUTED}
                     />
                   </Pressable>
                 </View>
@@ -275,13 +291,17 @@ export default function LoginScreen() {
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  pageWrap: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: 'transparent',
   },
   keyboardView: {
     flex: 1,
@@ -292,29 +312,39 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 32,
   },
   backButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: 12,
-    backgroundColor: '#f3f4f6',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
   },
-  pressed: {
-    opacity: 0.7,
+  headerTextWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerSpacer: {
+    width: 44,
   },
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#111827',
+    color: TEXT_PRIMARY,
     marginBottom: 8,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
-    color: '#6b7280',
+    color: TEXT_MUTED,
+    textAlign: 'center',
+  },
+  pressed: {
+    opacity: 0.7,
   },
   form: {
     flex: 1,
@@ -325,13 +355,13 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#374151',
+    color: TEXT_PRIMARY,
     marginBottom: 8,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
+    backgroundColor: '#ffffff',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e5e7eb',
@@ -347,7 +377,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 16,
-    color: '#111827',
+    color: TEXT_PRIMARY,
   },
   eyeButton: {
     padding: 4,
@@ -371,9 +401,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 20,
     paddingTop: 16,
-    backgroundColor: '#ffffff',
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
+    backgroundColor: 'transparent',
   },
   primaryButton: {
     borderRadius: 16,
@@ -403,7 +431,7 @@ const styles = StyleSheet.create({
   },
   signupText: {
     fontSize: 15,
-    color: '#6b7280',
+    color: TEXT_MUTED,
   },
   signupLink: {
     fontSize: 15,

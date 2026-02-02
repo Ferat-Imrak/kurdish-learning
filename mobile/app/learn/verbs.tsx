@@ -275,7 +275,8 @@ export default function VerbsPage() {
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   
-  // Progress tracking refs - will be restored from stored progress
+  const [playedKeysSnapshot, setPlayedKeysSnapshot] = useState<string[]>(() => getLessonProgress(LESSON_ID).playedAudioKeys || []);
+
   const progressConfig = {
     totalAudios: 37, // 25 verbs + 12 conjugations
     hasPractice: true,
@@ -284,16 +285,12 @@ export default function VerbsPage() {
     practiceWeight: 50,
     audioMultiplier: 0.81, // 30% / 37 audios ≈ 0.81% per audio
   };
-  
-  // Initialize refs - will be restored in useEffect
+
   const storedProgress = getLessonProgress(LESSON_ID);
   const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
   const startTimeRef = useRef<number>(estimatedStartTime);
-  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
-  // Base audio plays estimated from stored progress
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set((storedProgress.playedAudioKeys || []) as string[]));
   const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
-  // Track previous unique audio count to calculate increment
-  const previousUniqueAudiosCountRef = useRef<number>(0);
 
   // Initialize audio mode
   useEffect(() => {
@@ -329,19 +326,14 @@ export default function VerbsPage() {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS');
     }
     
-    // Restore refs from stored progress (in case progress was updated after component mount)
     const currentProgress = getLessonProgress(LESSON_ID);
     const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, progressConfig);
     startTimeRef.current = estimatedStartTime;
     baseAudioPlaysRef.current = estimatedAudioPlays;
-    
-    console.log('🔄 Restored refs:', {
-      estimatedAudioPlays,
-      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
-      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
-    });
-    
-    // Note: uniqueAudiosPlayedRef starts fresh each session, but we account for base progress
+    if (currentProgress.playedAudioKeys?.length) {
+      uniqueAudiosPlayedRef.current = new Set(currentProgress.playedAudioKeys);
+      setPlayedKeysSnapshot(currentProgress.playedAudioKeys);
+    }
   }, [isAuthenticated]);
 
   const playAudio = async (audioFile: string, uniqueKey?: string) => {
@@ -372,6 +364,7 @@ export default function VerbsPage() {
       // Track unique audios played (only count new ones) - use playKey as identifier
       if (!uniqueAudiosPlayedRef.current.has(playKey)) {
         uniqueAudiosPlayedRef.current.add(playKey);
+        setPlayedKeysSnapshot(Array.from(uniqueAudiosPlayedRef.current));
         handleAudioPlay();
       }
 
@@ -395,39 +388,16 @@ export default function VerbsPage() {
     // Calculate session time (time since restored start time)
     const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
     
-    // Audio progress: new unique audios played this session only
     const currentUniqueAudios = uniqueAudiosPlayedRef.current.size;
-    const newUniqueAudios = currentUniqueAudios - previousUniqueAudiosCountRef.current;
-    const newAudioProgress = Math.min(30, newUniqueAudios * 0.81);
-    // Update previous count for next calculation
-    previousUniqueAudiosCountRef.current = currentUniqueAudios;
-    
-    // Time progress: new session time only (max 20%, 4 minutes = 20%)
+    const audioProgress = Math.min(30, (currentUniqueAudios / progressConfig.totalAudios) * 30);
     const newTimeProgress = Math.min(20, sessionTimeMinutes * 5);
-    
-    // Get base progress from stored progress
-    const baseProgress = currentProgress?.progress || 0;
-    
-    // Practice progress: only if practice was just completed
     let practiceProgress = 0;
     if (practiceScore !== undefined) {
-      // Practice just completed - give full 50% if passed (>= 70%)
-      if (practiceScore >= 70) {
-        practiceProgress = 50;
-      } else {
-        // Failed - proportional score (0-49%)
-        practiceProgress = Math.min(49, practiceScore * 0.5);
-      }
+      practiceProgress = practiceScore >= 70 ? 50 : Math.min(49, practiceScore * 0.5);
     } else if (currentProgress?.status === 'COMPLETED') {
-      // Practice was completed before - give full 50%
       practiceProgress = 50;
     }
-    
-    // Calculate new progress from session activity
-    const calculatedProgress = Math.min(100, baseProgress + newAudioProgress + newTimeProgress + practiceProgress);
-    
-    // Use Math.max to prevent progress from dropping due to new calculation method
-    return Math.max(baseProgress, calculatedProgress);
+    return Math.min(100, audioProgress + newTimeProgress + practiceProgress);
   };
 
   const handleAudioPlay = () => {
@@ -441,8 +411,9 @@ export default function VerbsPage() {
     // Safeguard: ensure timeSpent is reasonable (max 1000 minutes = ~16 hours)
     const safeTimeSpent = Math.min(1000, totalTimeSpent);
     
-    const progress = calculateProgress(undefined); // Don't pass practice score here
-    updateLessonProgress(LESSON_ID, progress, 'IN_PROGRESS', undefined, safeTimeSpent);
+    const progress = calculateProgress(undefined);
+    const status = progress >= 100 ? 'COMPLETED' : 'IN_PROGRESS';
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent, Array.from(uniqueAudiosPlayedRef.current));
   };
 
   const handleAnswerSelect = (index: number) => {
@@ -482,7 +453,7 @@ export default function VerbsPage() {
       
       // Only mark lesson as completed if practice is passed
       const status = isPracticePassed ? 'COMPLETED' : 'IN_PROGRESS';
-      updateLessonProgress(LESSON_ID, progress, status, isPracticePassed ? practiceScorePercent : undefined, safeTimeSpent);
+      updateLessonProgress(LESSON_ID, progress, status, isPracticePassed ? practiceScorePercent : undefined, safeTimeSpent, Array.from(uniqueAudiosPlayedRef.current));
     }
   };
 
@@ -516,18 +487,8 @@ export default function VerbsPage() {
   }));
 
   const progress = getLessonProgress(LESSON_ID);
-  // Calculate total examples count for Learn progress (25 verbs + 12 conjugations = 37)
   const totalExamples = commonVerbs.length + verbConjugations.reduce((sum, verb) => sum + verb.conjugations.length, 0);
-  // Use getLearnedCount to get estimated base + new unique audios
-  const currentProgress = getLessonProgress(LESSON_ID);
-  const progressState = {
-    uniqueAudiosPlayed: uniqueAudiosPlayedRef.current,
-    sessionStartTime: startTimeRef.current,
-    baseProgress: currentProgress?.progress || 0,
-    baseTimeSpent: currentProgress?.timeSpent || 0,
-    practiceScore: currentProgress?.score,
-  };
-  const learnedCount = getLearnedCount(progressState, totalExamples);
+  const learnedCount = Math.min(totalExamples, uniqueAudiosPlayedRef.current.size);
 
   return (
     <View style={styles.pageWrap}>
@@ -615,32 +576,37 @@ export default function VerbsPage() {
             <View style={styles.sectionCard}>
               <Text style={styles.sectionTitle}>📚 Essential Verbs</Text>
               <View style={styles.verbsGrid}>
-                {verbsWithAudio.map((verb, index) => (
-                  <View key={index} style={styles.verbCard}>
-                    <View style={styles.verbTextContainer}>
-                      <Text style={styles.verbKurdish}>{verb.ku}</Text>
-                      <Text style={styles.verbEnglish}>{verb.en}</Text>
+                {verbsWithAudio.map((verb, index) => {
+                  const playKey = verb.audioFile;
+                  const alreadyPlayed = playedKeysSnapshot.includes(playKey);
+                  return (
+                    <View key={index} style={[styles.verbCard, alreadyPlayed && styles.playedCard]}>
+                      <View style={styles.verbTextContainer}>
+                        <Text style={styles.verbKurdish}>{verb.ku}</Text>
+                        <Text style={styles.verbEnglish}>{verb.en}</Text>
+                      </View>
+                      <View style={styles.verbBottomRow}>
+                        <Text style={styles.verbIcon}>{verb.icon}</Text>
+                        <Pressable
+                          onPress={() => playAudio(verb.audioFile)}
+                          style={styles.audioButtonContainer}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Ionicons
+                            name={playingAudio === verb.audioFile ? 'volume-high' : 'volume-low-outline'}
+                            size={22}
+                            color="#4b5563"
+                          />
+                        </Pressable>
+                      </View>
                     </View>
-                    <View style={styles.verbBottomRow}>
-                      <Text style={styles.verbIcon}>{verb.icon}</Text>
-                      <Pressable
-                        onPress={() => playAudio(verb.audioFile)}
-                        style={styles.audioButtonContainer}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        <Ionicons
-                          name={playingAudio === verb.audioFile ? 'volume-high' : 'volume-low-outline'}
-                          size={22}
-                          color="#4b5563"
-                        />
-                      </Pressable>
-                    </View>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             </View>
 
             {/* Verb Conjugations */}
+
             <View style={styles.sectionCard}>
               <Text style={styles.sectionTitle}>📝 Verb Conjugations</Text>
               <Text style={styles.sectionText}>
@@ -654,8 +620,9 @@ export default function VerbsPage() {
                   <View style={styles.conjugationsGrid}>
                     {verb.conjugations.map((conj, conjIndex) => {
                       const uniqueKey = `${verbIndex}-${conjIndex}-${conj.pronoun}`;
+                      const alreadyPlayed = playedKeysSnapshot.includes(uniqueKey);
                       return (
-                        <View key={conjIndex} style={styles.conjugationItem}>
+                        <View key={conjIndex} style={[styles.conjugationItem, alreadyPlayed && styles.playedCard]}>
                           <View style={styles.pronounBadge}>
                             <Text style={styles.pronounText}>{conj.pronoun}</Text>
                           </View>
@@ -904,6 +871,7 @@ const styles = StyleSheet.create({
     color: '#111827',
   },
   progressBarComplete: { color: '#10b981' },
+  playedCard: { opacity: 0.65 },
   progressBarDivider: {
     width: 1,
     height: 24,

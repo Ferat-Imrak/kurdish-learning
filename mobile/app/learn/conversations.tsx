@@ -1004,10 +1004,8 @@ const audioAssets: Record<string, any> = {
   'nave-te-ci-ye': require('../../assets/audio/conversations/nave-te-ci-ye.mp3'),
   'tu-ji-ku-yi': require('../../assets/audio/conversations/tu-ji-ku-yi.mp3'),
   'tu-inglizi-dizani': require('../../assets/audio/conversations/tu-inglizi-dizani.mp3'),
-  'pase-ditina-hev': require('../../assets/audio/conversations/pase-ditina-hev.mp3'),
   'tu-cend-sali-yi': require('../../assets/audio/conversations/tu-cend-sali-yi.mp3'),
   'tu-ci-kar-diki': require('../../assets/audio/conversations/tu-ci-kar-diki.mp3'),
-  'bi-nasina-te-ez-kefxwes-bum': require('../../assets/audio/conversations/bi-nasina-te-ez-kefxwes-bum.mp3'),
   'zaroken-te-hene': require('../../assets/audio/conversations/zaroken-te-hene.mp3'),
   'em-bibin-heval': require('../../assets/audio/conversations/em-bibin-heval.mp3'),
   'tu-qehwe-dixwazi-an-caye': require('../../assets/audio/conversations/tu-qehwe-dixwazi-an-caye.mp3'),
@@ -1132,30 +1130,26 @@ export default function DailyConversationsPage() {
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   
-  // Progress tracking refs - will be restored from stored progress
-  // Note: totalAudios will be set dynamically based on conversations.length
+  const [playedKeysSnapshot, setPlayedKeysSnapshot] = useState<string[]>(() => getLessonProgress(LESSON_ID).playedAudioKeys || []);
+
   const getProgressConfig = () => {
     const totalAudios = conversations.length;
     return {
       totalAudios,
-      hasPractice: false, // No practice section
+      hasPractice: false,
       audioWeight: 50,
       timeWeight: 50,
-      audioMultiplier: totalAudios > 0 ? 50 / totalAudios : 0, // 50% / total
-      timeMultiplier: 10, // 50% / 5 minutes = 10% per minute
+      audioMultiplier: totalAudios > 0 ? 50 / totalAudios : 0,
+      timeMultiplier: 10,
     };
   };
-  
-  // Initialize refs - will be restored in useEffect
+
   const storedProgress = getLessonProgress(LESSON_ID);
   const progressConfig = getProgressConfig();
   const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(storedProgress, progressConfig);
   const startTimeRef = useRef<number>(estimatedStartTime);
-  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set());
-  // Base audio plays estimated from stored progress
+  const uniqueAudiosPlayedRef = useRef<Set<string>>(new Set((storedProgress.playedAudioKeys || []) as string[]));
   const baseAudioPlaysRef = useRef<number>(estimatedAudioPlays);
-  // Track previous unique audio count to calculate increment
-  const previousUniqueAudiosCountRef = useRef<number>(0);
 
   // Initialize audio mode
   useEffect(() => {
@@ -1190,21 +1184,15 @@ export default function DailyConversationsPage() {
       updateLessonProgress(LESSON_ID, 0, 'IN_PROGRESS');
     }
     
-    // Restore refs from stored progress (in case progress was updated after component mount)
     const currentProgress = getLessonProgress(LESSON_ID);
     const currentConfig = getProgressConfig();
     const { estimatedAudioPlays, estimatedStartTime } = restoreRefsFromProgress(currentProgress, currentConfig);
     startTimeRef.current = estimatedStartTime;
     baseAudioPlaysRef.current = estimatedAudioPlays;
-    
-    console.log('🔄 Restored refs:', {
-      estimatedAudioPlays,
-      estimatedStartTime: new Date(estimatedStartTime).toISOString(),
-      uniqueAudiosPlayed: uniqueAudiosPlayedRef.current.size,
-      totalConversations: conversations.length,
-    });
-    
-    // Note: uniqueAudiosPlayedRef starts fresh each session, but we account for base progress
+    if (currentProgress.playedAudioKeys?.length) {
+      uniqueAudiosPlayedRef.current = new Set(currentProgress.playedAudioKeys);
+      setPlayedKeysSnapshot(currentProgress.playedAudioKeys);
+    }
   }, [isAuthenticated]);
 
   const playAudio = async (conversationId: string, kurdishText: string) => {
@@ -1232,9 +1220,9 @@ export default function DailyConversationsPage() {
         }
       });
 
-      // Track unique audios played (only count new ones)
       if (!uniqueAudiosPlayedRef.current.has(conversationId)) {
         uniqueAudiosPlayedRef.current.add(conversationId);
+        setPlayedKeysSnapshot(Array.from(uniqueAudiosPlayedRef.current));
         handleAudioPlay();
       }
     } catch (error) {
@@ -1245,57 +1233,24 @@ export default function DailyConversationsPage() {
 
   const handleAudioPlay = () => {
     const currentProgress = getLessonProgress(LESSON_ID);
-    
-    // Calculate total time spent (base + session)
     const baseTimeSpent = currentProgress?.timeSpent || 0;
     const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
-    const totalTimeSpent = baseTimeSpent + sessionTimeMinutes;
-    
-    // Safeguard: ensure timeSpent is reasonable (max 1000 minutes = ~16 hours)
-    const safeTimeSpent = Math.min(1000, totalTimeSpent);
-    
+    const safeTimeSpent = Math.min(1000, baseTimeSpent + sessionTimeMinutes);
     const progress = calculateProgress();
-    updateLessonProgress(LESSON_ID, progress, 'IN_PROGRESS', undefined, safeTimeSpent);
+    const status = progress >= 100 ? 'COMPLETED' : (currentProgress.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS');
+    updateLessonProgress(LESSON_ID, progress, status, undefined, safeTimeSpent, Array.from(uniqueAudiosPlayedRef.current));
   };
 
   const calculateProgress = () => {
-    // Get current progress to access latest timeSpent
-    const currentProgress = getLessonProgress(LESSON_ID);
     const totalAudios = conversations.length;
-    const audioMultiplier = totalAudios > 0 ? 50 / totalAudios : 0;
-    
-    // Calculate session time (time since restored start time)
-    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
-    
-    // Audio progress: new unique audios played this session only
     const currentUniqueAudios = uniqueAudiosPlayedRef.current.size;
-    const newUniqueAudios = currentUniqueAudios - previousUniqueAudiosCountRef.current;
-    const newAudioProgress = Math.min(50, newUniqueAudios * audioMultiplier);
-    // Update previous count for next calculation
-    previousUniqueAudiosCountRef.current = currentUniqueAudios;
-    
-    // Time progress: new session time only (max 50%, 5 minutes = 50%)
-    const newTimeProgress = Math.min(50, sessionTimeMinutes * 10);
-    
-    // Get base progress from stored progress
-    const baseProgress = currentProgress?.progress || 0;
-    
-    // For lessons without practice: audio + time can reach 100%
-    // Ensure that when all audios are played, audio progress contributes its full weight
-    let effectiveAudioCount = currentUniqueAudios;
-    if (effectiveAudioCount >= totalAudios && totalAudios > 0) {
-      effectiveAudioCount = totalAudios; // Cap at total
-      // Force full audio contribution when all are played
-      const fullAudioProgress = 50;
-      const calculatedProgress = Math.min(100, baseProgress + fullAudioProgress + newTimeProgress);
-      return Math.max(baseProgress, calculatedProgress);
-    }
-    
-    // Calculate new progress from session activity
-    const calculatedProgress = Math.min(100, baseProgress + newAudioProgress + newTimeProgress);
-    
-    // Use Math.max to prevent progress from dropping due to new calculation method
-    return Math.max(baseProgress, calculatedProgress);
+    if (totalAudios > 0 && currentUniqueAudios >= totalAudios) return 100;
+    const audioProgress = totalAudios > 0 ? Math.min(50, (currentUniqueAudios / totalAudios) * 50) : 0;
+    const currentProgress = getLessonProgress(LESSON_ID);
+    const baseTimeSpent = currentProgress?.timeSpent || 0;
+    const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60);
+    const timeProgress = Math.min(50, (baseTimeSpent + sessionTimeMinutes) * 10);
+    return Math.min(100, audioProgress + timeProgress);
   };
 
   const filteredConversations = useMemo(() => {
@@ -1310,16 +1265,7 @@ export default function DailyConversationsPage() {
 
   const progress = getLessonProgress(LESSON_ID);
   const totalConversations = conversations.length;
-  // Use getLearnedCount to get estimated base + new unique audios
-  const currentProgress = getLessonProgress(LESSON_ID);
-  const progressState = {
-    uniqueAudiosPlayed: uniqueAudiosPlayedRef.current,
-    sessionStartTime: startTimeRef.current,
-    baseProgress: currentProgress?.progress || 0,
-    baseTimeSpent: currentProgress?.timeSpent || 0,
-    practiceScore: currentProgress?.score,
-  };
-  const learnedCount = getLearnedCount(progressState, totalConversations);
+  const learnedCount = Math.min(totalConversations, uniqueAudiosPlayedRef.current.size);
 
   // Category chips data with "All" first
   const categoryChips = useMemo(() => {
@@ -1344,18 +1290,21 @@ export default function DailyConversationsPage() {
     const categoryInfo = categories.find(cat => cat.id === item.category);
     const isExpanded = expandedCards.has(item.id);
     const isPlaying = playingAudio === item.id;
+    const alreadyPlayed = playedKeysSnapshot.includes(item.id);
 
     return (
-      <ConversationCard
-        conversation={item}
-        categoryInfo={categoryInfo}
-        isPlaying={isPlaying}
-        isExpanded={isExpanded}
-        onPress={() => toggleCardExpansion(item.id)}
-        onAudioPress={() => playAudio(item.id, item.kurdish)}
-      />
+      <View style={alreadyPlayed ? styles.playedCard : undefined}>
+        <ConversationCard
+          conversation={item}
+          categoryInfo={categoryInfo}
+          isPlaying={isPlaying}
+          isExpanded={isExpanded}
+          onPress={() => toggleCardExpansion(item.id)}
+          onAudioPress={() => playAudio(item.id, item.kurdish)}
+        />
+      </View>
     );
-  }, [expandedCards, playingAudio, categories]);
+  }, [expandedCards, playingAudio, categories, playedKeysSnapshot]);
 
   // Render category chip
   const renderCategoryChip = useCallback(({ item }: { item: ConversationCategory | { id: 'all'; name: string; icon: string | null } }) => {
@@ -1508,6 +1457,7 @@ const styles = StyleSheet.create({
     color: '#111827',
   },
   progressBarComplete: { color: '#10b981' },
+  playedCard: { opacity: 0.65 },
   progressBarDivider: {
     width: 1,
     height: 24,

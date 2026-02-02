@@ -1,21 +1,36 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Image } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  Alert,
+  Image,
+  ScrollView,
+  Platform,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../../lib/store/authStore';
 
+const SKY_TOP = '#E8F2FF';
+const SKY_MID = '#D6E6FF';
+const SKY_BOTTOM = '#E0EDFF';
+const TEXT_PRIMARY = '#0F172A';
+const TEXT_MUTED = '#64748B';
+const ACCENT = '#2563eb';
+const CARD_BG = '#FFFFFF';
+const MENU_ICON_BG = '#F1F5F9';
+
 export default function ProfileScreen() {
   const router = useRouter();
   const navigation = useNavigation();
-  // Only subscribe to what we need - Zustand will only re-render when these change
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const logout = useAuthStore((state) => state.logout);
-
-  // REMOVED: useFocusEffect redirect logic
-  // Navigation is handled in handleLogout, so this was causing conflicts
 
   const handleLogout = () => {
     Alert.alert(
@@ -27,30 +42,15 @@ export default function ProfileScreen() {
           text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
-            console.log('🔴 Profile: Logout button pressed');
-            
-            // Logout FIRST
-            console.log('🔴 Profile: Logging out');
             await logout();
-            console.log('🔴 Profile: Logout complete');
-            
-            // THEN navigate to login page after logout completes
-            // This avoids navigation conflicts
-            console.log('🔴 Profile: Navigating to login AFTER logout');
             try {
-              // @ts-ignore - getParent exists on navigation
               const parentNav = navigation.getParent();
               if (parentNav) {
-                console.log('🔴 Profile: Using parent navigation to exit tabs');
-                // @ts-ignore - navigate to auth/login
-                parentNav.navigate('auth/login');
+                (parentNav as any).navigate('auth/login');
               } else {
-                // Fallback: use router
-                console.log('🔴 Profile: Parent nav not available, using router');
                 router.replace('/auth/login');
               }
-            } catch (e) {
-              console.log('🔴 Profile: Navigation error, using router fallback:', e);
+            } catch {
               router.replace('/auth/login');
             }
           },
@@ -59,180 +59,298 @@ export default function ProfileScreen() {
     );
   };
 
-  return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Profile</Text>
+  const displayName = (() => {
+    const raw = user?.name || user?.username || 'User';
+    return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+  })();
+
+  const MenuRow = ({
+    icon,
+    label,
+    onPress,
+    danger,
+  }: {
+    icon: keyof typeof Ionicons.glyphMap;
+    label: string;
+    onPress: () => void;
+    danger?: boolean;
+  }) => (
+    <Pressable
+      style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
+      onPress={onPress}
+    >
+      <View style={[styles.menuIconWrap, danger && styles.menuIconWrapDanger]}>
+        <Ionicons
+          name={icon}
+          size={20}
+          color={danger ? '#dc2626' : TEXT_PRIMARY}
+        />
       </View>
-      <View style={styles.content}>
-        <View style={styles.profileSection}>
-          <View style={styles.avatar}>
-            {user?.image ? (
-              <Image source={{ uri: user.image }} style={styles.avatarImage} />
+      <Text style={[styles.menuLabel, danger && styles.menuLabelDanger]}>{label}</Text>
+      <Ionicons name="chevron-forward" size={18} color={TEXT_MUTED} />
+    </Pressable>
+  );
+
+  return (
+    <View style={styles.pageWrap}>
+      <LinearGradient
+        colors={[SKY_TOP, SKY_MID, SKY_BOTTOM]}
+        style={StyleSheet.absoluteFill}
+      />
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Page title */}
+          <Text style={styles.pageTitle}>Profile</Text>
+
+          {/* Profile hero card */}
+          <View style={styles.heroCard}>
+            <View style={styles.avatarRing}>
+              <View style={styles.avatar}>
+                {user?.image ? (
+                  <Image source={{ uri: user.image }} style={styles.avatarImage} />
+                ) : (
+                  <Ionicons name="person" size={44} color={ACCENT} />
+                )}
+              </View>
+            </View>
+            {isAuthenticated && user ? (
+              <>
+                <Text style={styles.userName} numberOfLines={1}>{displayName}</Text>
+                <View style={styles.emailRow}>
+                  <Ionicons name="mail-outline" size={14} color={TEXT_MUTED} />
+                  <Text style={styles.userEmail} numberOfLines={1}>{user.email || ''}</Text>
+                </View>
+                {user.subscriptionPlan && (
+                  <View style={styles.planBadge}>
+                    <Ionicons name="diamond-outline" size={14} color={ACCENT} />
+                    <Text style={styles.planBadgeText}>
+                      {user.subscriptionPlan === 'YEARLY' ? 'Yearly' : 'Monthly'} Plan
+                    </Text>
+                  </View>
+                )}
+              </>
             ) : (
-              <Ionicons name="person" size={48} color="#2563eb" />
+              <>
+                <Text style={styles.userName}>Guest</Text>
+                <Text style={styles.userEmail}>Sign in to sync your progress</Text>
+              </>
             )}
           </View>
-          {isAuthenticated && user ? (
-            <>
-              <Text style={styles.userName}>{user.name || user.username || 'User'}</Text>
-              <Text style={styles.userEmail}>{user.email || ''}</Text>
-              {user.subscriptionPlan && (
-                <View style={styles.subscriptionBadge}>
-                  <Text style={styles.subscriptionText}>
-                    {user.subscriptionPlan === 'YEARLY' ? 'Yearly' : 'Monthly'} Plan
-                  </Text>
-                </View>
-              )}
-            </>
-          ) : (
-            <>
-              <Text style={styles.userName}>Guest User</Text>
-              <Text style={styles.userEmail}>Sign in to sync your progress</Text>
-            </>
-          )}
-        </View>
 
-        <View style={styles.menuSection}>
-          {isAuthenticated ? (
-            <>
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => {}}
-              >
-                <Ionicons name="settings-outline" size={24} color="#111827" />
-                <Text style={styles.menuText}>Settings</Text>
-                <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => {}}
-              >
-                <Ionicons name="card-outline" size={24} color="#111827" />
-                <Text style={styles.menuText}>Subscription</Text>
-                <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={handleLogout}
-              >
-                <Ionicons name="log-out-outline" size={24} color="#ef4444" />
-                <Text style={[styles.menuText, styles.logoutText]}>Sign Out</Text>
-                <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-                      <TouchableOpacity
-                        style={styles.menuItem}
-                        onPress={() => router.replace('/auth/login')}
-                      >
-                        <Ionicons name="log-in-outline" size={24} color="#111827" />
-                        <Text style={styles.menuText}>Sign In</Text>
-                        <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.menuItem}
-                        onPress={() => router.replace('/auth/register')}
-                      >
-                        <Ionicons name="person-add-outline" size={24} color="#111827" />
-                        <Text style={styles.menuText}>Create Account</Text>
-                        <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
-                      </TouchableOpacity>
-            </>
+          {/* Account section */}
+          <Text style={styles.sectionLabel}>Account</Text>
+          <View style={styles.menuCard}>
+            {isAuthenticated ? (
+              <>
+                <MenuRow icon="person-outline" label="Edit Profile" onPress={() => router.push('/edit-profile' as any)} />
+                <View style={styles.menuDivider} />
+                <MenuRow icon="lock-closed-outline" label="Change Password" onPress={() => router.push('/change-password' as any)} />
+                <View style={styles.menuDivider} />
+                <MenuRow icon="card-outline" label="Subscription" onPress={() => router.push('/subscription' as any)} />
+                <View style={styles.menuDivider} />
+                <MenuRow icon="trash-outline" label="Delete Account" onPress={() => router.push('/delete-account' as any)} danger />
+              </>
+            ) : (
+              <>
+                <MenuRow icon="log-in-outline" label="Sign In" onPress={() => router.replace('/auth/login' as any)} />
+                <View style={styles.menuDivider} />
+                <MenuRow icon="person-add-outline" label="Create Account" onPress={() => router.replace('/auth/register' as any)} />
+              </>
+            )}
+          </View>
+
+          {/* Sign out – separate card for emphasis */}
+          {isAuthenticated && (
+            <Pressable
+              style={({ pressed }) => [styles.signOutCard, pressed && styles.menuRowPressed]}
+              onPress={handleLogout}
+            >
+              <Ionicons name="log-out-outline" size={20} color="#dc2626" />
+              <Text style={styles.signOutText}>Sign Out</Text>
+            </Pressable>
           )}
-        </View>
-      </View>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
+  pageWrap: { flex: 1 },
+  safe: { flex: 1 },
+  scroll: { flex: 1 },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 40,
   },
-  header: {
-    padding: 20,
-    paddingBottom: 16,
+  pageTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+    marginBottom: 20,
+    letterSpacing: -0.5,
+    textAlign: 'center',
   },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  content: {
-    flex: 1,
-    padding: 20,
-  },
-  profileSection: {
+  heroCard: {
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 24,
+    backgroundColor: CARD_BG,
+    borderRadius: 24,
+    paddingVertical: 28,
+    paddingHorizontal: 24,
     marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+      },
+      android: { elevation: 4 },
+    }),
+  },
+  avatarRing: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    padding: 3,
+    backgroundColor: 'rgba(37, 99, 235, 0.15)',
+    marginBottom: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 94,
+    height: 94,
+    borderRadius: 47,
     backgroundColor: '#eff6ff',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 94,
+    height: 94,
+    borderRadius: 47,
   },
   userName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontSize: 22,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
     marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  emailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginBottom: 8,
   },
   userEmail: {
     fontSize: 14,
-    color: '#6b7280',
+    color: TEXT_MUTED,
   },
-  menuSection: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    overflow: 'hidden',
-  },
-  menuItem: {
+  planBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+    borderRadius: 20,
   },
-  menuText: {
+  planBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: ACCENT,
+  },
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: TEXT_MUTED,
+    marginBottom: 10,
+    marginLeft: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  menuCard: {
+    backgroundColor: CARD_BG,
+    borderRadius: 20,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+      },
+      android: { elevation: 3 },
+    }),
+  },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  menuRowPressed: {
+    opacity: 0.7,
+  },
+  menuIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: MENU_ICON_BG,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  menuIconWrapDanger: {
+    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+  },
+  menuLabel: {
     flex: 1,
     fontSize: 16,
-    color: '#111827',
-    marginLeft: 12,
+    fontWeight: '500',
+    color: TEXT_PRIMARY,
   },
-  logoutText: {
-    color: '#ef4444',
+  menuLabelDanger: {
+    color: '#dc2626',
   },
-  avatarImage: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+  menuDivider: {
+    height: 1,
+    backgroundColor: '#f1f5f9',
+    marginLeft: 16 + 36 + 12,
   },
-  subscriptionBadge: {
-    marginTop: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    backgroundColor: '#eff6ff',
-    borderRadius: 12,
+  signOutCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: CARD_BG,
+    borderRadius: 20,
+    paddingVertical: 16,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(220, 38, 38, 0.2)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+      },
+      android: { elevation: 2 },
+    }),
   },
-  subscriptionText: {
-    fontSize: 12,
+  signOutText: {
+    fontSize: 16,
     fontWeight: '600',
-    color: '#2563eb',
+    color: '#dc2626',
   },
 });
-
-
