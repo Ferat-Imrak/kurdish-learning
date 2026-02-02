@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import Link from "next/link"
 import { motion } from "framer-motion"
 import { CheckCircle, XCircle, RotateCcw } from "lucide-react"
 import PageContainer from "../../../components/PageContainer"
@@ -854,7 +855,7 @@ export default function SimpleFuturePage() {
                             <AudioButton
                               kurdishText={example.audioText || example.ku}
                               phoneticText={example.en}
-                              audioFile={example.audioFile}
+                              audioFile={'audioFile' in example ? example.audioFile : undefined}
                               label="Listen"
                               size="small"
                               onPlay={(audioKey) => handleAudioPlay(audioKey || `example-${sectionIndex}-${exampleIndex}-${example.ku}`)}
