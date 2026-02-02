@@ -103,10 +103,10 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
         const merged: Record<string, LessonProgress> = {}
         
         // Get all unique lesson IDs
-        const allLessonIds = new Set([
+        const allLessonIds = Array.from(new Set([
           ...Object.keys(prev),
           ...Object.keys(remoteProgressFormatted)
-        ])
+        ]))
 
         for (const lessonId of allLessonIds) {
           const local = prev[lessonId]
