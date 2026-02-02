@@ -885,7 +885,7 @@ export default function SimplePresentPage() {
                             <AudioButton
                               kurdishText={example.audioText || example.ku}
                               phoneticText={example.en}
-                              audioFile={example.audioFile}
+                              audioFile={'audioFile' in example ? example.audioFile : undefined}
                               label="Listen"
                               size="small"
                               onPlay={(audioKey) => handleAudioPlay(audioKey || `example-${sectionIndex}-${exampleIndex}`)}
