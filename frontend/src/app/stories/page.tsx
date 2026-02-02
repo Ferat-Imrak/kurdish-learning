@@ -178,7 +178,6 @@ const vocabularyDict: Record<string, string> = {
   'ajelan': 'animals',
   'du': 'two',
   'pisîk': 'cat',
-  'spî': 'white',
   'ne': 'are',
   'yek': 'one',
   'se': 'dog',
