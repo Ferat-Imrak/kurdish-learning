@@ -55,6 +55,7 @@ resource "aws_apprunner_service" "this" {
 
     code_repository {
       repository_url = var.repository_url
+      source_directory = var.source_directory
 
       source_code_version {
         type  = "BRANCH"

@@ -18,6 +18,12 @@ variable "branch_name" {
   type        = string
 }
 
+variable "source_directory" {
+  description = "Source directory within the repo"
+  type        = string
+  default     = "backend"
+}
+
 variable "vpc_connector_subnet_ids" {
   description = "Private subnet IDs for VPC connector"
   type        = list(string)
@@ -49,13 +55,13 @@ variable "memory" {
 variable "build_command" {
   description = "Build command for App Runner"
   type        = string
-  default     = "cd backend && npm ci && npm run build && npx prisma generate"
+  default     = "npm ci && npm run build && npx prisma generate"
 }
 
 variable "start_command" {
   description = "Start command for App Runner"
   type        = string
-  default     = "cd backend && npm run start"
+  default     = "npm run start"
 }
 
 variable "env_vars" {
