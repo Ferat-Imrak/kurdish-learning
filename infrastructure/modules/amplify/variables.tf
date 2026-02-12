@@ -59,3 +59,9 @@ variable "service_role_suffix" {
   type        = string
   default     = ""
 }
+
+variable "use_service_linked_role" {
+  description = "Use AWS service-linked role for Amplify instead of custom role"
+  type        = bool
+  default     = false
+}

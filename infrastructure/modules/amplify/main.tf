@@ -14,13 +14,26 @@ data "aws_iam_policy_document" "amplify_assume_role" {
 }
 
 resource "aws_iam_role" "amplify_service" {
+  count              = var.use_service_linked_role ? 0 : 1
   name               = "${var.project_name}-${var.environment}-amplify-service-role${var.service_role_suffix}"
   assume_role_policy = data.aws_iam_policy_document.amplify_assume_role.json
 }
 
 resource "aws_iam_role_policy_attachment" "amplify_service" {
-  role       = aws_iam_role.amplify_service.name
+  count      = var.use_service_linked_role ? 0 : 1
+  role       = aws_iam_role.amplify_service[0].name
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess-Amplify"
+}
+
+resource "aws_iam_service_linked_role" "amplify" {
+  count       = var.use_service_linked_role ? 1 : 0
+  aws_service_name = "amplify.amazonaws.com"
+}
+
+data "aws_iam_role" "amplify_slr" {
+  count = var.use_service_linked_role ? 1 : 0
+  name  = "AWSServiceRoleForAmplify"
+  depends_on = [aws_iam_service_linked_role.amplify]
 }
 
 resource "aws_amplify_app" "this" {
@@ -29,7 +42,7 @@ resource "aws_amplify_app" "this" {
   access_token         = var.github_access_token
   platform             = "WEB_COMPUTE"
   enable_branch_auto_build = true
-  iam_service_role_arn = aws_iam_role.amplify_service.arn
+  iam_service_role_arn = var.use_service_linked_role ? data.aws_iam_role.amplify_slr[0].arn : aws_iam_role.amplify_service[0].arn
 
   environment_variables = var.environment_variables
 

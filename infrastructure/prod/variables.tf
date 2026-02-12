@@ -75,6 +75,12 @@ variable "amplify_service_role_suffix" {
   default     = ""
 }
 
+variable "amplify_use_service_linked_role" {
+  description = "Use AWS service-linked role for Amplify"
+  type        = bool
+  default     = false
+}
+
 variable "backend_repository_url" {
   description = "GitHub repository URL for the backend"
   type        = string

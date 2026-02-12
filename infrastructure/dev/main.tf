@@ -188,6 +188,7 @@ module "frontend" {
   route53_zone_id = var.domain_name != "" ? data.aws_route53_zone.main[0].zone_id : ""
   subdomains      = ["", "www"]
   service_role_suffix = var.amplify_service_role_suffix
+  use_service_linked_role = var.amplify_use_service_linked_role
 }
 
 # Secrets Manager for sensitive data
