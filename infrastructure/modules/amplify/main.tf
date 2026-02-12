@@ -62,11 +62,8 @@ applications:
         build:
           commands:
             - npm run build
-        postBuild:
-          commands:
-            - npx amplify-hosting configure
       artifacts:
-        baseDirectory: .amplify-hosting
+        baseDirectory: .next
         files:
           - '**/*'
       cache:
