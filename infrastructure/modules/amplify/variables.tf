@@ -36,6 +36,12 @@ variable "environment_variables" {
   default     = {}
 }
 
+variable "build_spec_override" {
+  description = "Optional build spec override; leave empty to use Amplify defaults"
+  type        = string
+  default     = ""
+}
+
 variable "app_name_suffix" {
   description = "Optional suffix to force a new Amplify app"
   type        = string

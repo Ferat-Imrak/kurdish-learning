@@ -183,6 +183,7 @@ module "frontend" {
     NEXTAUTH_URL        = local.frontend_url
     NEXTAUTH_SECRET     = var.nextauth_secret
     NEXT_PUBLIC_API_URL = local.backend_api_url
+    AMPLIFY_MONOREPO_APP_ROOT = "frontend"
   }
   domain_name     = var.domain_name
   route53_zone_id = var.domain_name != "" ? data.aws_route53_zone.main[0].zone_id : ""

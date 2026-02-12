@@ -50,26 +50,7 @@ resource "aws_amplify_app" "this" {
 
   environment_variables = var.environment_variables
 
-  build_spec = <<EOF
-version: 1
-applications:
-  - appRoot: ${var.app_root}
-    frontend:
-      phases:
-        preBuild:
-          commands:
-            - npm ci
-        build:
-          commands:
-            - npm run build
-      artifacts:
-        baseDirectory: .next
-        files:
-          - '**/*'
-      cache:
-        paths:
-          - node_modules/**/*
-EOF
+  build_spec = var.build_spec_override != "" ? var.build_spec_override : null
 
   tags = {
     Environment = var.environment
