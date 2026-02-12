@@ -69,6 +69,18 @@ variable "amplify_github_token" {
   sensitive   = true
 }
 
+variable "amplify_enable_branch_auto_build" {
+  description = "Enable auto build for Amplify branches"
+  type        = bool
+  default     = true
+}
+
+variable "amplify_enable_auto_build" {
+  description = "Enable auto build for the Amplify branch"
+  type        = bool
+  default     = true
+}
+
 variable "amplify_service_role_suffix" {
   description = "Optional suffix to force a new Amplify service role"
   type        = string

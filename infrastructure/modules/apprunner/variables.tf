@@ -55,13 +55,13 @@ variable "memory" {
 variable "build_command" {
   description = "Build command for App Runner"
   type        = string
-  default     = "npm ci && npx prisma generate && npx prisma migrate deploy && npm run build"
+  default     = "npm ci && npx prisma generate && npm run build"
 }
 
 variable "start_command" {
   description = "Start command for App Runner"
   type        = string
-  default     = "npm run start"
+  default     = "sh scripts/apprunner-start.sh"
 }
 
 variable "env_vars" {

@@ -30,6 +30,18 @@ variable "app_root" {
   default     = "frontend"
 }
 
+variable "enable_branch_auto_build" {
+  description = "Enable auto build for branches"
+  type        = bool
+  default     = true
+}
+
+variable "enable_auto_build" {
+  description = "Enable auto build for the branch"
+  type        = bool
+  default     = true
+}
+
 variable "environment_variables" {
   description = "Environment variables for the Amplify app"
   type        = map(string)

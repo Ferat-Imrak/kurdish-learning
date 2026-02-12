@@ -186,6 +186,8 @@ module "frontend" {
     NEXT_PUBLIC_API_URL = local.backend_api_url
     AMPLIFY_MONOREPO_APP_ROOT = "frontend"
   }
+  enable_branch_auto_build = var.amplify_enable_branch_auto_build
+  enable_auto_build        = var.amplify_enable_auto_build
   domain_name     = var.domain_name
   route53_zone_id = var.domain_name != "" ? data.aws_route53_zone.main[0].zone_id : ""
   subdomains      = ["", "www"]

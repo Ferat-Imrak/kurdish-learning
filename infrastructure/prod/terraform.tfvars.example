@@ -15,6 +15,8 @@ frontend_repository_url = "https://github.com/your-org/your-repo"
 frontend_branch         = "main"
 amplify_github_token    = "ghp_your_github_token"
 frontend_url            = "https://peyvi.com"
+amplify_enable_branch_auto_build = true
+amplify_enable_auto_build = true
 
 # Backend (App Runner)
 backend_repository_url = "https://github.com/your-org/your-repo"

@@ -41,7 +41,7 @@ resource "aws_amplify_app" "this" {
   repository           = var.repository_url
   access_token         = var.github_access_token
   platform             = "WEB_COMPUTE"
-  enable_branch_auto_build = true
+  enable_branch_auto_build = var.enable_branch_auto_build
   iam_service_role_arn = var.service_role_arn_override != "" ? var.service_role_arn_override : (
     var.manage_service_role ? (
       var.use_service_linked_role ? data.aws_iam_role.amplify_slr[0].arn : aws_iam_role.amplify_service[0].arn
@@ -63,7 +63,7 @@ resource "aws_amplify_branch" "this" {
   app_id      = aws_amplify_app.this.id
   branch_name = var.branch_name
   stage       = var.environment == "prod" ? "PRODUCTION" : "DEVELOPMENT"
-  enable_auto_build = true
+  enable_auto_build = var.enable_auto_build
 }
 
 locals {

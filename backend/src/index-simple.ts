@@ -32,6 +32,10 @@ dotenv.config()
 const app = express()
 const PORT = Number(process.env.PORT) || 5002
 
+if (process.env.NODE_ENV !== 'development') {
+  app.set('trust proxy', 1)
+}
+
 // Security middleware
 app.use(helmet())
 // CORS configuration - allow all origins in development for mobile testing
