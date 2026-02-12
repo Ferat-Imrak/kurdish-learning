@@ -59,13 +59,15 @@ applications:
         preBuild:
           commands:
             - npm ci
+            - npx amplify-hosting configure
         build:
           commands:
             - npm run build
       artifacts:
-        baseDirectory: .next
+        baseDirectory: .
         files:
-          - '**/*'
+          - '.next/**'
+          - '.amplify-hosting/**'
       cache:
         paths:
           - node_modules/**/*
