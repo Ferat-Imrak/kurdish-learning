@@ -12,10 +12,10 @@ terraform {
   # Configure backend after manually creating S3 bucket and DynamoDB table
   # Replace ACCOUNT_ID with your AWS account ID
   backend "s3" {
-    bucket         = "peyvi-dev-terraform-state-634347876978"
-    key            = "dev/terraform.tfstate"
+    bucket         = "peyvi-prod-terraform-state-634347876978"
+    key            = "prod/terraform.tfstate"
     region         = "us-east-1"
-    dynamodb_table = "peyvi-dev-terraform-state-lock"
+    dynamodb_table = "peyvi-prod-terraform-state-lock"
     encrypt        = true
   }
 }
@@ -113,92 +113,80 @@ data "aws_route53_zone" "main" {
   name  = var.domain_name
 }
 
-# Provider for us-east-1 (required for CloudFront certificates)
-provider "aws" {
-  alias  = "us_east_1"
-  region = "us-east-1"
+locals {
+  database_url = "postgresql://${var.database_username}:${var.database_password}@${module.rds.db_instance_address}:${module.rds.db_instance_port}/${var.database_name}"
+  frontend_url = var.frontend_url != "" ? var.frontend_url : (var.domain_name != "" ? "https://${var.domain_name}" : "")
 }
 
-# ACM Certificate - create only if domain is provided
-resource "aws_acm_certificate" "main" {
-  count             = var.domain_name != "" ? 1 : 0
-  provider          = aws.us_east_1
-  domain_name       = var.domain_name
-  validation_method = "DNS"
+# Secrets Manager - Database URL for app runtimes
+resource "aws_secretsmanager_secret" "database_url" {
+  name        = "${var.project_name}/prod/database-url"
+  description = "Database URL for prod runtimes"
+}
 
-  lifecycle {
-    create_before_destroy = true
+resource "aws_secretsmanager_secret_version" "database_url" {
+  secret_id     = aws_secretsmanager_secret.database_url.id
+  secret_string = local.database_url
+}
+
+# Secrets Manager - JWT secret for backend
+resource "aws_secretsmanager_secret" "jwt" {
+  name        = "${var.project_name}/prod/jwt-secret"
+  description = "JWT secret for backend"
+}
+
+resource "aws_secretsmanager_secret_version" "jwt" {
+  secret_id     = aws_secretsmanager_secret.jwt.id
+  secret_string = var.jwt_secret
+}
+
+# App Runner - Backend API (Express)
+module "backend" {
+  source = "../modules/apprunner"
+
+  project_name                     = var.project_name
+  environment                      = "prod"
+  repository_url                   = var.backend_repository_url
+  branch_name                      = var.backend_branch
+  vpc_connector_subnet_ids          = module.vpc.private_subnet_ids
+  vpc_connector_security_group_ids  = [aws_security_group.app.id]
+  service_port                      = var.backend_port
+  cpu                               = var.backend_cpu
+  memory                            = var.backend_memory
+  env_vars = {
+    NODE_ENV     = "production"
+    PORT         = tostring(var.backend_port)
+    FRONTEND_URL = local.frontend_url
   }
-
-  tags = {
-    Name        = "${var.project_name}-prod-cert"
-    Environment = "prod"
-    Project     = var.project_name
-    ManagedBy   = "terraform"
-  }
-}
-
-# Certificate validation records
-resource "aws_route53_record" "cert_validation" {
-  for_each = var.domain_name != "" ? {
-    for dvo in aws_acm_certificate.main[0].domain_validation_options : dvo.domain_name => {
-      name   = dvo.resource_record_name
-      record = dvo.resource_record_value
-      type   = dvo.resource_record_type
-    }
-  } : {}
-
-  allow_overwrite = true
-  name            = each.value.name
-  records         = [each.value.record]
-  ttl             = 60
-  type            = each.value.type
-  zone_id         = data.aws_route53_zone.main[0].zone_id
-}
-
-# Certificate validation
-resource "aws_acm_certificate_validation" "main" {
-  count           = var.domain_name != "" ? 1 : 0
-  provider        = aws.us_east_1
-  certificate_arn = aws_acm_certificate.main[0].arn
-  validation_record_fqdns = [
-    for record in aws_route53_record.cert_validation : record.fqdn
-  ]
-
-  timeouts {
-    create = "5m"
+  secrets = {
+    DATABASE_URL = aws_secretsmanager_secret_version.database_url.arn
+    JWT_SECRET   = aws_secretsmanager_secret_version.jwt.arn
   }
 }
 
-# S3 + CloudFront Module
+locals {
+  backend_api_url = "${module.backend.service_url}/api"
+}
+
+# Amplify - Frontend (Next.js SSR)
 module "frontend" {
-  source = "../modules/s3-cloudfront"
+  source = "../modules/amplify"
 
-  project_name        = var.project_name
-  environment         = "prod"
-  aws_account_id      = data.aws_caller_identity.current.account_id
-  domain_name         = var.domain_name
-  acm_certificate_arn = var.domain_name != "" && length(aws_acm_certificate_validation.main) > 0 ? aws_acm_certificate_validation.main[0].certificate_arn : ""
-  price_class         = "PriceClass_All" # Global distribution for prod
-}
-
-# Route 53 Record for CloudFront
-resource "aws_route53_record" "frontend" {
-  count   = var.domain_name != "" ? 1 : 0
-  zone_id = data.aws_route53_zone.main[0].zone_id
-  name    = var.domain_name
-  type    = "A"
-
-  alias {
-    name                   = module.frontend.cloudfront_domain_name
-    zone_id                = "Z2FDTNDATAQYW2" # CloudFront hosted zone ID (constant)
-    evaluate_target_health = false
+  project_name          = var.project_name
+  environment           = "prod"
+  repository_url        = var.frontend_repository_url
+  branch_name           = var.frontend_branch
+  github_access_token   = var.amplify_github_token
+  app_root              = "frontend"
+  environment_variables = {
+    DATABASE_URL       = local.database_url
+    NEXTAUTH_URL       = local.frontend_url
+    NEXTAUTH_SECRET    = var.nextauth_secret
+    NEXT_PUBLIC_API_URL = local.backend_api_url
   }
-}
-
-# Reference to CloudFront distribution (needed for Route 53)
-data "aws_cloudfront_distribution" "frontend" {
-  id = module.frontend.cloudfront_distribution_id
+  domain_name      = var.domain_name
+  route53_zone_id  = data.aws_route53_zone.main[0].zone_id
+  subdomains       = ["", "www"]
 }
 
 # Secrets Manager for sensitive data

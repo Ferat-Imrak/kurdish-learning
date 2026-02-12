@@ -82,14 +82,14 @@ resource "aws_route_table" "public" {
 
 # Route Table Associations for Public Subnets
 resource "aws_route_table_association" "public" {
-  count          = length(aws_subnet.public)
+  count          = length(var.public_subnet_cidrs)
   subnet_id      = aws_subnet.public[count.index].id
   route_table_id = aws_route_table.public.id
 }
 
 # NAT Gateway (only for private subnets - cost optimization: one per AZ)
 resource "aws_eip" "nat" {
-  count  = var.enable_nat_gateway ? length(aws_subnet.public) : 0
+  count  = var.enable_nat_gateway ? length(var.public_subnet_cidrs) : 0
   domain = "vpc"
 
   tags = {
@@ -103,7 +103,7 @@ resource "aws_eip" "nat" {
 }
 
 resource "aws_nat_gateway" "main" {
-  count         = var.enable_nat_gateway ? length(aws_subnet.public) : 0
+  count         = var.enable_nat_gateway ? length(var.public_subnet_cidrs) : 0
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
 
@@ -119,7 +119,7 @@ resource "aws_nat_gateway" "main" {
 
 # Route Table for Private Subnets
 resource "aws_route_table" "private" {
-  count  = var.enable_nat_gateway ? length(aws_subnet.private) : 0
+  count  = var.enable_nat_gateway ? length(var.private_subnet_cidrs) : 0
   vpc_id = aws_vpc.main.id
 
   route {
@@ -137,7 +137,7 @@ resource "aws_route_table" "private" {
 
 # Route Table Associations for Private Subnets
 resource "aws_route_table_association" "private" {
-  count          = var.enable_nat_gateway ? length(aws_subnet.private) : 0
+  count          = var.enable_nat_gateway ? length(var.private_subnet_cidrs) : 0
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = aws_route_table.private[count.index].id
 }

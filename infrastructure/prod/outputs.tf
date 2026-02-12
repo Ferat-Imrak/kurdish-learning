@@ -16,17 +16,12 @@ output "database_name" {
 
 output "frontend_url" {
   description = "Frontend URL"
-  value       = var.domain_name != "" ? "https://${var.domain_name}" : module.frontend.cloudfront_url
+  value       = var.domain_name != "" ? "https://${var.domain_name}" : module.frontend.branch_url
 }
 
-output "frontend_s3_bucket" {
-  description = "Frontend S3 bucket name"
-  value       = module.frontend.s3_bucket_id
-}
-
-output "cloudfront_distribution_id" {
-  description = "CloudFront distribution ID"
-  value       = module.frontend.cloudfront_distribution_id
+output "frontend_default_domain" {
+  description = "Amplify default domain"
+  value       = module.frontend.default_domain
 }
 
 output "terraform_state_bucket" {

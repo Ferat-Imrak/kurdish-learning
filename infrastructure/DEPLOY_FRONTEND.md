@@ -1,6 +1,7 @@
 # Deploy Frontend to AWS
 
-After running `terraform apply`, you need to deploy your frontend code to S3.
+If you are using the **Amplify** Terraform module (Next.js SSR), you do **not** upload to S3 manually. Amplify will build from GitHub and deploy automatically.
+The steps below apply only if you keep the **static S3 + CloudFront** approach.
 cloudfront_distribution_id = "EA9TQAL6BKXWA"
 database_endpoint = <sensitive>
 database_name = "kurdish_learning"

@@ -79,11 +79,16 @@ So:
 
 ---
 
-## Frontend vs mobile (unchanged)
+## Frontend vs mobile consistency
+
+**Aligned (sync-safe):** Both use the same backend API; both treat timeSpent as total minutes (replace on update); **both merge timeSpent with max(local, remote)** so web + mobile sync does not double-count time. Progress and status merge by max / best on both.
+
+**Different (by design):** Frontend has no `playedAudioKeys`; mobile persists and merges it. Backend does not store playedAudioKeys; sync is consistent for progress %, status, timeSpent, score.
 
 | Aspect | Frontend (web) | Mobile |
 |--------|-----------------|--------|
-| **Storage** | `localStorage` (lessonProgress_*, lessonInteractions_*) | AsyncStorage + backend |
-| **Sync** | ProgressContext: sync from/to backend, merge by max progress | progressStore: initialize → AsyncStorage + syncFromBackend; merge progress/time/playedAudioKeys as above |
+| **Storage** | `localStorage` (lessonProgress_*) | AsyncStorage + backend |
+| **Merge timeSpent** | **max(local, remote)** | **max(local, remote)** |
+| **Sync** | ProgressContext: sync from/to backend | progressStore: syncFromBackend; merge progress/time/playedAudioKeys |
 | **“Items” tracking** | Section-based (lessonInteractions_*) | **Audio-based: `playedAudioKeys` persisted**; “X/24” and dimming use this |
 | **Persistence** | Until user clears / logs out | Same; survives app restarts |

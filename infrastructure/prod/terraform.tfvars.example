@@ -10,3 +10,18 @@ database_password = "your-secure-password-here"
 # Domain (required for prod)
 domain_name = "peyvi.com"
 
+# Frontend (Amplify)
+frontend_repository_url = "https://github.com/your-org/your-repo"
+frontend_branch         = "main"
+amplify_github_token    = "ghp_your_github_token"
+frontend_url            = "https://peyvi.com"
+
+# Backend (App Runner)
+backend_repository_url = "https://github.com/your-org/your-repo"
+backend_branch         = "main"
+backend_port           = 8080
+
+# Secrets
+jwt_secret      = "your-jwt-secret"
+nextauth_secret = "your-nextauth-secret"
+

@@ -25,28 +25,28 @@ interface ProgressContextType {
 
 const ProgressContext = createContext<ProgressContextType | undefined>(undefined)
 
-// Helper to merge progress (take highest progress, latest timestamp, accumulate time)
+// Helper to merge progress (take highest progress, latest timestamp, max time – consistent with mobile)
 function mergeProgress(local: LessonProgress, remote: LessonProgress): LessonProgress {
   const localTime = local.lastAccessed.getTime()
   const remoteTime = remote.lastAccessed.getTime()
-  
+
   // Take highest progress
   const mergedProgress = Math.max(local.progress, remote.progress)
-  
+
   // Take latest timestamp
   const mergedLastAccessed = localTime > remoteTime ? local.lastAccessed : remote.lastAccessed
-  
-  // Accumulate time spent
-  const mergedTimeSpent = local.timeSpent + remote.timeSpent
-  
+
+  // timeSpent is total minutes per lesson (both clients send total); use max to avoid double-counting when syncing web + mobile
+  const mergedTimeSpent = Math.max(local.timeSpent, remote.timeSpent)
+
   // Take highest score
   const mergedScore = Math.max(local.score || 0, remote.score || 0)
-  
+
   // Status: if either is COMPLETED, use COMPLETED, else use the one with higher progress
   const mergedStatus = local.status === 'COMPLETED' || remote.status === 'COMPLETED'
     ? 'COMPLETED'
     : mergedProgress > 0 ? 'IN_PROGRESS' : 'NOT_STARTED'
-  
+
   return {
     lessonId: local.lessonId,
     progress: mergedProgress,

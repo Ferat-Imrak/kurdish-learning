@@ -10,3 +10,18 @@ database_password = "your-secure-password-here"
 # Domain (optional for dev)
 domain_name = ""
 
+# Frontend (Amplify)
+frontend_repository_url = "https://github.com/your-org/your-repo"
+frontend_branch         = "main"
+amplify_github_token    = "ghp_your_github_token"
+frontend_url            = ""
+
+# Backend (App Runner)
+backend_repository_url = "https://github.com/your-org/your-repo"
+backend_branch         = "main"
+backend_port           = 8080
+
+# Secrets
+jwt_secret      = "your-jwt-secret"
+nextauth_secret = "your-nextauth-secret"
+

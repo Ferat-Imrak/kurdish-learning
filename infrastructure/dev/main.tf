@@ -59,7 +59,7 @@ module "vpc" {
   public_subnet_cidrs  = var.public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs
   availability_zones   = slice(data.aws_availability_zones.available.names, 0, 2)
-  enable_nat_gateway    = false # Disable NAT to save costs in dev
+  enable_nat_gateway    = true # Enable NAT so App Runner can reach internet
 }
 
 # Security Group for Application
@@ -107,15 +107,86 @@ module "rds" {
   backup_retention_period = 3 # Shorter retention for dev
 }
 
-# S3 + CloudFront Module
-module "frontend" {
-  source = "../modules/s3-cloudfront"
+# Route 53 Hosted Zone (optional for dev)
+data "aws_route53_zone" "main" {
+  count = var.domain_name != "" ? 1 : 0
+  name  = var.domain_name
+}
 
-  project_name   = var.project_name
-  environment    = "dev"
-  aws_account_id = data.aws_caller_identity.current.account_id
-  domain_name    = "" # No custom domain for dev
-  price_class    = "PriceClass_100"
+locals {
+  database_url = "postgresql://${var.database_username}:${var.database_password}@${module.rds.db_instance_address}:${module.rds.db_instance_port}/${var.database_name}"
+  frontend_url = var.frontend_url != "" ? var.frontend_url : ""
+}
+
+# Secrets Manager - Database URL for app runtimes
+resource "aws_secretsmanager_secret" "database_url" {
+  name        = "${var.project_name}/dev/database-url"
+  description = "Database URL for dev runtimes"
+}
+
+resource "aws_secretsmanager_secret_version" "database_url" {
+  secret_id     = aws_secretsmanager_secret.database_url.id
+  secret_string = local.database_url
+}
+
+# Secrets Manager - JWT secret for backend
+resource "aws_secretsmanager_secret" "jwt" {
+  name        = "${var.project_name}/dev/jwt-secret"
+  description = "JWT secret for backend"
+}
+
+resource "aws_secretsmanager_secret_version" "jwt" {
+  secret_id     = aws_secretsmanager_secret.jwt.id
+  secret_string = var.jwt_secret
+}
+
+# App Runner - Backend API (Express)
+module "backend" {
+  source = "../modules/apprunner"
+
+  project_name                     = var.project_name
+  environment                      = "dev"
+  repository_url                   = var.backend_repository_url
+  branch_name                      = var.backend_branch
+  vpc_connector_subnet_ids          = module.vpc.private_subnet_ids
+  vpc_connector_security_group_ids  = [aws_security_group.app.id]
+  service_port                      = var.backend_port
+  cpu                               = var.backend_cpu
+  memory                            = var.backend_memory
+  env_vars = {
+    NODE_ENV     = "development"
+    PORT         = tostring(var.backend_port)
+    FRONTEND_URL = local.frontend_url
+  }
+  secrets = {
+    DATABASE_URL = aws_secretsmanager_secret_version.database_url.arn
+    JWT_SECRET   = aws_secretsmanager_secret_version.jwt.arn
+  }
+}
+
+locals {
+  backend_api_url = "${module.backend.service_url}/api"
+}
+
+# Amplify - Frontend (Next.js SSR)
+module "frontend" {
+  source = "../modules/amplify"
+
+  project_name          = var.project_name
+  environment           = "dev"
+  repository_url        = var.frontend_repository_url
+  branch_name           = var.frontend_branch
+  github_access_token   = var.amplify_github_token
+  app_root              = "frontend"
+  environment_variables = {
+    DATABASE_URL        = local.database_url
+    NEXTAUTH_URL        = local.frontend_url
+    NEXTAUTH_SECRET     = var.nextauth_secret
+    NEXT_PUBLIC_API_URL = local.backend_api_url
+  }
+  domain_name     = var.domain_name
+  route53_zone_id = var.domain_name != "" ? data.aws_route53_zone.main[0].zone_id : ""
+  subdomains      = ["", "www"]
 }
 
 # Secrets Manager for sensitive data
