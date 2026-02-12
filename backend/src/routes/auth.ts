@@ -3,6 +3,7 @@ import { body, validationResult } from 'express-validator'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { PrismaClient } from '@prisma/client'
+import { getJwtSecret } from '../utils/jwt'
 
 const router = Router()
 const prisma = new PrismaClient()
@@ -56,11 +57,11 @@ router.post('/register', [
     // Generate JWT token
     const token = jwt.sign(
       { userId: user.id },
-      process.env.JWT_SECRET || 'fallback-secret',
+      getJwtSecret(),
       { expiresIn: '7d' }
     )
 
-    res.status(201).json({
+    return res.status(201).json({
       message: 'User created successfully',
       user: {
         id: user.id,
@@ -80,7 +81,7 @@ router.post('/register', [
     const errorMessage = process.env.NODE_ENV === 'development' 
       ? (error.message || 'Internal server error')
       : 'Internal server error'
-    res.status(500).json({ 
+    return res.status(500).json({ 
       message: errorMessage,
       error: process.env.NODE_ENV === 'development' ? error.stack : undefined
     })
@@ -136,11 +137,11 @@ router.post('/login', [
     // Generate JWT token
     const token = jwt.sign(
       { userId: user.id },
-      process.env.JWT_SECRET || 'fallback-secret',
+      getJwtSecret(),
       { expiresIn: '7d' }
     )
 
-    res.json({
+    return res.json({
       message: 'Login successful',
       user: {
         id: user.id,
@@ -156,7 +157,7 @@ router.post('/login', [
     })
   } catch (error) {
     console.error('Login error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
@@ -165,7 +166,7 @@ async function getUserIdFromToken(req: Request): Promise<string | null> {
   const token = req.headers.authorization?.split(' ')[1]
   if (!token) return null
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as { userId: string }
+    const decoded = jwt.verify(token, getJwtSecret()) as { userId: string }
     return decoded.userId
   } catch {
     return null
@@ -191,7 +192,7 @@ router.get('/me', async (req, res) => {
       return res.status(404).json({ message: 'User not found' })
     }
 
-    res.json({
+    return res.json({
       user: {
         id: user.id,
         email: user.email,
@@ -203,7 +204,7 @@ router.get('/me', async (req, res) => {
     })
   } catch (error) {
     console.error('Get user error:', error)
-    res.status(401).json({ message: 'Invalid token' })
+    return res.status(401).json({ message: 'Invalid token' })
   }
 })
 
@@ -251,7 +252,7 @@ router.put('/me', [
       data: updateData
     })
 
-    res.json({
+    return res.json({
       message: 'Profile updated successfully',
       user: {
         id: user.id,
@@ -263,7 +264,7 @@ router.put('/me', [
     })
   } catch (error: any) {
     console.error('Update profile error:', error)
-    res.status(500).json({ message: error.message || 'Failed to update profile' })
+    return res.status(500).json({ message: error.message || 'Failed to update profile' })
   }
 })
 
@@ -304,10 +305,10 @@ router.put('/change-password', [
       data: { passwordHash: hashedNew }
     })
 
-    res.json({ message: 'Password changed successfully' })
+    return res.json({ message: 'Password changed successfully' })
   } catch (error: any) {
     console.error('Change password error:', error)
-    res.status(500).json({ message: error.message || 'Failed to change password' })
+    return res.status(500).json({ message: error.message || 'Failed to change password' })
   }
 })
 
@@ -323,10 +324,10 @@ router.delete('/me', async (req: Request, res: Response) => {
       where: { id: userId }
     })
 
-    res.json({ message: 'Account deleted successfully' })
+    return res.json({ message: 'Account deleted successfully' })
   } catch (error: any) {
     console.error('Delete account error:', error)
-    res.status(500).json({ message: error.message || 'Failed to delete account' })
+    return res.status(500).json({ message: error.message || 'Failed to delete account' })
   }
 })
 
@@ -357,14 +358,14 @@ router.get('/subscription', async (req: Request, res: Response) => {
       })
     }
 
-    res.json({
+    return res.json({
       plan: user.subscriptionPlan || 'MONTHLY',
       status,
       endDate: user.subscriptionEndDate
     })
   } catch (error: any) {
     console.error('Get subscription error:', error)
-    res.status(500).json({ message: error.message || 'Failed to get subscription' })
+    return res.status(500).json({ message: error.message || 'Failed to get subscription' })
   }
 })
 
@@ -391,13 +392,13 @@ router.put('/subscription/plan', [
       data: { subscriptionPlan }
     })
 
-    res.json({
+    return res.json({
       message: 'Subscription plan updated successfully',
       plan: user.subscriptionPlan
     })
   } catch (error: any) {
     console.error('Change plan error:', error)
-    res.status(500).json({ message: error.message || 'Failed to change subscription plan' })
+    return res.status(500).json({ message: error.message || 'Failed to change subscription plan' })
   }
 })
 
@@ -430,13 +431,13 @@ router.post('/subscription/cancel', async (req: Request, res: Response) => {
       data: { subscriptionStatus: 'CANCELED' }
     })
 
-    res.json({
+    return res.json({
       message: 'Subscription canceled successfully. You will have access until your subscription end date.',
       endDate: updated.subscriptionEndDate
     })
   } catch (error: any) {
     console.error('Cancel subscription error:', error)
-    res.status(500).json({ message: error.message || 'Failed to cancel subscription' })
+    return res.status(500).json({ message: error.message || 'Failed to cancel subscription' })
   }
 })
 

@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, ContentType } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
@@ -20,7 +20,7 @@ async function main() {
   // Add lesson content for alphabet
   const alphabetContent = [
     {
-      type: 'TEXT',
+      type: ContentType.TEXT,
       title: 'Letter A',
       content: JSON.stringify({
         letter: 'A',
@@ -34,7 +34,7 @@ async function main() {
       lessonId: kurmanjiAlphabetLesson.id
     },
     {
-      type: 'TEXT',
+      type: ContentType.TEXT,
       title: 'Letter B',
       content: JSON.stringify({
         letter: 'B',
@@ -48,7 +48,7 @@ async function main() {
       lessonId: kurmanjiAlphabetLesson.id
     },
     {
-      type: 'TEXT',
+      type: ContentType.TEXT,
       title: 'Letter C',
       content: JSON.stringify({
         letter: 'C',
@@ -62,7 +62,7 @@ async function main() {
       lessonId: kurmanjiAlphabetLesson.id
     },
     {
-      type: 'INTERACTIVE',
+      type: ContentType.INTERACTIVE,
       title: 'Practice Letters A, B, C',
       content: JSON.stringify({
         type: 'tracing',
@@ -94,7 +94,7 @@ async function main() {
 
   const numbersContent = [
     {
-      type: 'TEXT',
+      type: ContentType.TEXT,
       title: 'Number 1',
       content: JSON.stringify({
         number: 1,
@@ -108,7 +108,7 @@ async function main() {
       lessonId: numbersLesson.id
     },
     {
-      type: 'TEXT',
+      type: ContentType.TEXT,
       title: 'Number 2',
       content: JSON.stringify({
         number: 2,
@@ -122,7 +122,7 @@ async function main() {
       lessonId: numbersLesson.id
     },
     {
-      type: 'INTERACTIVE',
+      type: ContentType.INTERACTIVE,
       title: 'Count Together',
       content: JSON.stringify({
         type: 'counting',
@@ -154,7 +154,7 @@ async function main() {
 
   const colorsContent = [
     {
-      type: 'TEXT',
+      type: ContentType.TEXT,
       title: 'Red',
       content: JSON.stringify({
         english: 'red',
@@ -168,7 +168,7 @@ async function main() {
       lessonId: colorsLesson.id
     },
     {
-      type: 'TEXT',
+      type: ContentType.TEXT,
       title: 'Blue',
       content: JSON.stringify({
         english: 'blue',
@@ -182,7 +182,7 @@ async function main() {
       lessonId: colorsLesson.id
     },
     {
-      type: 'INTERACTIVE',
+      type: ContentType.INTERACTIVE,
       title: 'Color Matching Game',
       content: JSON.stringify({
         type: 'matching',

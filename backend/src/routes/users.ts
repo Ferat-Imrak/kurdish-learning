@@ -1,16 +1,20 @@
-import { Router } from 'express'
+import { Router, Request, Response } from 'express'
 import { body, validationResult } from 'express-validator'
 import { PrismaClient } from '@prisma/client'
+import { authenticateToken, AuthRequest } from '../middleware/auth'
 
 const router = Router()
 const prisma = new PrismaClient()
+
+// Require authentication for all user routes
+router.use(authenticateToken)
 
 // Create child profile
 router.post('/children', [
   body('name').trim().isLength({ min: 2 }),
   body('age').isInt({ min: 3, max: 12 }),
   body('language').isIn(['KURMANJI', 'SORANI']),
-], async (req, res) => {
+], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req)
     if (!errors.isEmpty()) {
@@ -34,18 +38,18 @@ router.post('/children', [
       }
     })
 
-    res.status(201).json({
+    return res.status(201).json({
       message: 'Child profile created successfully',
       child
     })
   } catch (error) {
     console.error('Create child error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
 // Get all children for a parent
-router.get('/children', async (req, res) => {
+router.get('/children', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
 
@@ -65,10 +69,10 @@ router.get('/children', async (req, res) => {
       }
     })
 
-    res.json({ children })
+    return res.json({ children })
   } catch (error) {
     console.error('Get children error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
@@ -77,7 +81,7 @@ router.put('/children/:id', [
   body('name').optional().trim().isLength({ min: 2 }),
   body('age').optional().isInt({ min: 3, max: 12 }),
   body('language').optional().isIn(['KURMANJI', 'SORANI']),
-], async (req, res) => {
+], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req)
     if (!errors.isEmpty()) {
@@ -109,18 +113,18 @@ router.put('/children/:id', [
       data: updateData
     })
 
-    res.json({
+    return res.json({
       message: 'Child profile updated successfully',
       child: updatedChild
     })
   } catch (error) {
     console.error('Update child error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
 // Delete child profile
-router.delete('/children/:id', async (req, res) => {
+router.delete('/children/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params
     const userId = req.user?.id
@@ -145,10 +149,10 @@ router.delete('/children/:id', async (req, res) => {
       where: { id }
     })
 
-    res.json({ message: 'Child profile deleted successfully' })
+    return res.json({ message: 'Child profile deleted successfully' })
   } catch (error) {
     console.error('Delete child error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 

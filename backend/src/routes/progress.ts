@@ -1,7 +1,7 @@
-import { Router } from 'express'
+import { Router, Request, Response } from 'express'
 import { body, validationResult } from 'express-validator'
-import { PrismaClient } from '@prisma/client'
-import { authenticateToken } from '../middleware/auth'
+import { PrismaClient, Prisma } from '@prisma/client'
+import { authenticateToken, AuthRequest } from '../middleware/auth'
 
 const router = Router()
 const prisma = new PrismaClient()
@@ -35,7 +35,7 @@ async function getOrCreateChild(userId: string) {
 
 // --- Games progress (sync between frontend and mobile) ---
 // GET /api/progress/games - get all games progress for authenticated user
-router.get('/games', authenticateToken, async (req, res) => {
+router.get('/games', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ message: 'Unauthorized' })
@@ -54,28 +54,28 @@ router.get('/games', authenticateToken, async (req, res) => {
 // POST /api/progress/games/sync - save full games progress (merge with existing per-key "best" value)
 router.post('/games/sync', authenticateToken, [
   body('data').isObject(),
-], async (req, res) => {
+], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req)
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() })
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ message: 'Unauthorized' })
     const child = await getOrCreateChild(userId)
-    const incoming = req.body.data as Record<string, unknown>
+    const incoming = req.body.data as Record<string, Prisma.InputJsonValue>
     const existing = await prisma.gamesProgress.findUnique({
       where: { childId: child.id }
     })
-    const existingData = (existing?.data as Record<string, unknown>) ?? {}
-    const merged = { ...existingData }
+    const existingData = (existing?.data as Record<string, Prisma.InputJsonValue>) ?? {}
+    const merged: Record<string, Prisma.InputJsonValue> = { ...existingData }
     for (const [key, value] of Object.entries(incoming)) {
       if (value === undefined) continue
       const prev = merged[key]
-      merged[key] = takeBestGamesProgress(key, prev, value)
+      merged[key] = takeBestGamesProgress(key, prev, value) as Prisma.InputJsonValue
     }
     await prisma.gamesProgress.upsert({
       where: { childId: child.id },
-      create: { childId: child.id, data: merged },
-      update: { data: merged }
+      create: { childId: child.id, data: merged as Prisma.InputJsonValue },
+      update: { data: merged as Prisma.InputJsonValue }
     })
     return res.json({ data: merged })
   } catch (error: any) {
@@ -123,7 +123,7 @@ router.use('/user', authenticateToken)
 // User-level progress endpoints (must come BEFORE /:lessonId to avoid route conflicts)
 
 // Delete all progress for the authenticated user
-router.delete('/user', async (req, res) => {
+router.delete('/user', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
 
@@ -173,7 +173,7 @@ router.delete('/user', async (req, res) => {
 })
 
 // Get all progress for the authenticated user
-router.get('/user', async (req, res) => {
+router.get('/user', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
     const userEmail = req.user?.email
@@ -270,17 +270,17 @@ router.get('/user', async (req, res) => {
       console.log(`📊 Backend GET /user: Alphabet progress:`, formattedProgress['1']);
     }
 
-    res.json({ progress: formattedProgress })
+    return res.json({ progress: formattedProgress })
   } catch (error) {
     console.error('Get user progress error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
 // Bulk update progress (for syncing) - must come before /user/:lessonId
 router.post('/user/sync', [
   body('progress').isObject(),
-], async (req, res) => {
+], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req)
     if (!errors.isEmpty()) {
@@ -592,13 +592,13 @@ router.post('/user/sync', [
       console.log(`📊 Backend: Synced lesson ${lessonId} - progress: ${overallProgress}, status: ${progressRecord.status}`)
     }
 
-    res.json({
+    return res.json({
       message: 'Progress synced successfully',
       progress: syncedProgress
     })
   } catch (error) {
     console.error('Sync progress error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
@@ -608,7 +608,7 @@ router.post('/user/:lessonId', [
   body('progress').optional().isInt({ min: 0, max: 100 }),
   body('score').optional().isInt({ min: 0, max: 100 }),
   body('timeSpent').optional().isInt({ min: 0 }),
-], async (req, res) => {
+], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req)
     if (!errors.isEmpty()) {
@@ -688,7 +688,7 @@ router.post('/user/:lessonId', [
       }
     })
 
-    res.json({
+    return res.json({
       message: 'Progress updated successfully',
       progress: {
         lessonId: progressRecord.lessonId,
@@ -701,7 +701,7 @@ router.post('/user/:lessonId', [
     })
   } catch (error) {
     console.error('Update user progress error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
@@ -711,7 +711,7 @@ router.post('/:lessonId', [
   body('status').isIn(['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'MASTERED']),
   body('score').optional().isInt({ min: 0, max: 100 }),
   body('timeSpent').optional().isInt({ min: 0 }),
-], async (req, res) => {
+], async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req)
     if (!errors.isEmpty()) {
@@ -764,18 +764,18 @@ router.post('/:lessonId', [
       }
     })
 
-    res.json({
+    return res.json({
       message: 'Progress updated successfully',
       progress
     })
   } catch (error) {
     console.error('Update progress error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
 // Get child's progress
-router.get('/child/:childId', async (req, res) => {
+router.get('/child/:childId', async (req: AuthRequest, res: Response) => {
   try {
     const { childId } = req.params
     const userId = req.user?.id
@@ -804,15 +804,15 @@ router.get('/child/:childId', async (req, res) => {
       orderBy: { updatedAt: 'desc' }
     })
 
-    res.json({ progress })
+    return res.json({ progress })
   } catch (error) {
     console.error('Get progress error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
 // Get progress summary for dashboard
-router.get('/child/:childId/summary', async (req, res) => {
+router.get('/child/:childId/summary', async (req: AuthRequest, res: Response) => {
   try {
     const { childId } = req.params
     const userId = req.user?.id
@@ -853,10 +853,10 @@ router.get('/child/:childId/summary', async (req, res) => {
       })
     }
 
-    res.json({ summary })
+    return res.json({ summary })
   } catch (error) {
     console.error('Get progress summary error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 

@@ -37,7 +37,7 @@ function getLocalIP(): string {
 }
 
 const app = express()
-const PORT = process.env.PORT || 5001
+const PORT = Number(process.env.PORT) || 5001
 
 // Security middleware
 app.use(helmet())

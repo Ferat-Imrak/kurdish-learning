@@ -1,11 +1,11 @@
-import { Router } from 'express'
+import { Router, Request, Response } from 'express'
 import { PrismaClient } from '@prisma/client'
 
 const router = Router()
 const prisma = new PrismaClient()
 
 // Get all lessons for a language
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request, res: Response) => {
   try {
     const { language, type, difficulty } = req.query
 
@@ -35,15 +35,15 @@ router.get('/', async (req, res) => {
       orderBy: { order: 'asc' }
     })
 
-    res.json({ lessons })
+    return res.json({ lessons })
   } catch (error) {
     console.error('Get lessons error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
 // Get specific lesson
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params
 
@@ -60,15 +60,15 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Lesson not found' })
     }
 
-    res.json({ lesson })
+    return res.json({ lesson })
   } catch (error) {
     console.error('Get lesson error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
 // Get lesson content
-router.get('/:id/content', async (req, res) => {
+router.get('/:id/content', async (req: Request, res: Response) => {
   try {
     const { id } = req.params
 
@@ -77,10 +77,10 @@ router.get('/:id/content', async (req, res) => {
       orderBy: { order: 'asc' }
     })
 
-    res.json({ content })
+    return res.json({ content })
   } catch (error) {
     console.error('Get lesson content error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 

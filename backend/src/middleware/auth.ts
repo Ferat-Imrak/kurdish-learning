@@ -1,10 +1,11 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { PrismaClient } from '@prisma/client'
+import { getJwtSecret } from '../utils/jwt'
 
 const prisma = new PrismaClient()
 
-interface AuthRequest extends Request {
+export interface AuthRequest extends Request {
   user?: {
     id: string
     email: string
@@ -22,7 +23,7 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
       return res.status(401).json({ message: 'Access token required' })
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as any
+    const decoded = jwt.verify(token, getJwtSecret()) as any
     
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId }

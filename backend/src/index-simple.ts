@@ -30,7 +30,7 @@ import achievementRoutes from './routes/achievements'
 dotenv.config()
 
 const app = express()
-const PORT = process.env.PORT || 5002
+const PORT = Number(process.env.PORT) || 5002
 
 // Security middleware
 app.use(helmet())

@@ -219,10 +219,10 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       }
     })
 
-    res.json({ achievements: allAchievements })
+    return res.json({ achievements: allAchievements })
   } catch (error) {
     console.error('Get achievements error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
@@ -332,10 +332,10 @@ router.post('/check', authenticateToken, async (req: AuthRequest, res: Response)
       }
     }
 
-    res.json({ newlyEarned })
+    return res.json({ newlyEarned })
   } catch (error) {
     console.error('Check achievements error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
