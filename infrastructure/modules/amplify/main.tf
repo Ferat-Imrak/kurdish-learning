@@ -2,12 +2,34 @@ terraform {
   required_version = ">= 1.0"
 }
 
+data "aws_iam_policy_document" "amplify_assume_role" {
+  statement {
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["amplify.amazonaws.com"]
+    }
+    actions = ["sts:AssumeRole"]
+  }
+}
+
+resource "aws_iam_role" "amplify_service" {
+  name               = "${var.project_name}-${var.environment}-amplify-service-role"
+  assume_role_policy = data.aws_iam_policy_document.amplify_assume_role.json
+}
+
+resource "aws_iam_role_policy_attachment" "amplify_service" {
+  role       = aws_iam_role.amplify_service.name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess-Amplify"
+}
+
 resource "aws_amplify_app" "this" {
   name                 = "${var.project_name}-${var.environment}-frontend"
   repository           = var.repository_url
   access_token         = var.github_access_token
   platform             = "WEB_COMPUTE"
   enable_branch_auto_build = true
+  iam_service_role_arn = aws_iam_role.amplify_service.arn
 
   environment_variables = var.environment_variables
 
