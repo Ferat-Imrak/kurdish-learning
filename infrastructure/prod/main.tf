@@ -193,6 +193,7 @@ module "frontend" {
   manage_service_role     = var.amplify_manage_service_role
   app_name_suffix         = var.amplify_app_name_suffix
   service_role_arn_override = var.amplify_service_role_arn_override
+  build_spec_override       = var.amplify_build_spec_override
 }
 
 # Secrets Manager for sensitive data

@@ -99,6 +99,12 @@ variable "amplify_service_role_arn_override" {
   default     = ""
 }
 
+variable "amplify_build_spec_override" {
+  description = "Optional build spec override for Amplify"
+  type        = string
+  default     = ""
+}
+
 variable "backend_repository_url" {
   description = "GitHub repository URL for the backend"
   type        = string
