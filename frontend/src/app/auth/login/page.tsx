@@ -5,10 +5,11 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Eye, EyeOff, Mail, Lock, CheckCircle, XCircle, User } from 'lucide-react'
-import { signIn } from 'next-auth/react'
+import { useAuth } from '../../providers'
 
 export default function LoginPage() {
   const router = useRouter()
+  const { signOut } = useAuth()
   const [formData, setFormData] = useState({
     usernameOrEmail: '',
     password: '',
@@ -56,16 +57,20 @@ export default function LoginPage() {
     setLoginError('')
     
     try {
-      // First, login with NextAuth
-      const res = await signIn('credentials', {
-        email: formData.usernameOrEmail, // NextAuth expects 'email' field, but we accept both username and email
-        password: formData.password,
-        redirect: false,
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+      const loginResponse = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: formData.usernameOrEmail.includes('@') ? formData.usernameOrEmail : undefined,
+          username: formData.usernameOrEmail.includes('@') ? undefined : formData.usernameOrEmail,
+          password: formData.password,
+        }),
       })
-      
-      if (res?.error) {
-        // Check if it's a subscription error
-        if (res.error === 'SUBSCRIPTION_EXPIRED' || res.error.includes('subscription')) {
+
+      if (!loginResponse.ok) {
+        const data = await loginResponse.json().catch(() => ({}))
+        if (data?.message?.includes('subscription')) {
           setLoginError('SUBSCRIPTION_REQUIRED')
         } else {
           setLoginError('Invalid username/email or password. Please check your credentials and try again.')
@@ -74,35 +79,15 @@ export default function LoginPage() {
         return
       }
 
-      // NextAuth login successful - now get backend JWT token for API calls
-      try {
-        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
-        const loginResponse = await fetch(`${API_BASE_URL}/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: formData.usernameOrEmail.includes('@') ? formData.usernameOrEmail : undefined,
-            username: formData.usernameOrEmail.includes('@') ? undefined : formData.usernameOrEmail,
-            password: formData.password,
-          }),
-        })
-
-        if (loginResponse.ok) {
-          const data = await loginResponse.json()
-          if (data.token) {
-            // Store backend JWT token for API calls
-            localStorage.setItem('auth_token', data.token)
-            if (formData.rememberMe) {
-              sessionStorage.setItem('auth_token', data.token)
-            }
-            console.log('✅ Backend JWT token stored for API calls');
-          }
-        } else {
-          console.warn('⚠️ Failed to get backend token, but NextAuth login succeeded');
+      const data = await loginResponse.json()
+      if (data.token) {
+        localStorage.setItem('auth_token', data.token)
+        if (formData.rememberMe) {
+          sessionStorage.setItem('auth_token', data.token)
         }
-      } catch (error) {
-        console.error('❌ Error getting backend token:', error);
-        // Continue anyway - user is logged in with NextAuth, just can't sync progress
+      } else {
+        await signOut()
+        throw new Error('Missing auth token')
       }
 
       // Successful login

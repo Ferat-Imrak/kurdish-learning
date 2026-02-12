@@ -6,12 +6,10 @@ import { motion } from 'framer-motion'
 import NextImage from 'next/image'
 import { User, Mail, Lock, Camera, Save, Loader2, Trash2, CreditCard, CheckCircle2, XCircle } from 'lucide-react'
 import { useAuth } from '../providers'
-import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 
 export default function ProfilePage() {
   const { user, loading: authLoading, signOut } = useAuth()
-  const { update: updateSession } = useSession()
   const router = useRouter()
   const [fullName, setFullName] = useState(user?.name || '')
   const [email, setEmail] = useState(user?.email || '')
@@ -44,6 +42,15 @@ export default function ProfilePage() {
   const [isCanceling, setIsCanceling] = useState(false)
   const [cancelStatus, setCancelStatus] = useState<'success' | 'error' | null>(null)
   const [cancelMessage, setCancelMessage] = useState<string>('')
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  }
 
   useEffect(() => {
     if (user) {
@@ -58,7 +65,9 @@ export default function ProfilePage() {
     const fetchSubscriptionDetails = async () => {
       try {
         // Fetch from API to get full details
-        const response = await fetch('/api/user/subscription')
+        const response = await fetch(`${apiBase}/auth/subscription`, {
+          headers: getAuthHeaders()
+        })
         if (response.ok) {
           const data = await response.json()
           // Convert 'MONTHLY'/'YEARLY' to 'monthly'/'yearly'
@@ -150,9 +159,9 @@ export default function ProfilePage() {
       const compressedBase64 = await compressImage(file, 512, 512, 0.8)
       
       // Save to database via API
-      const response = await fetch('/api/user/update-profile', {
+      const response = await fetch(`${apiBase}/auth/me`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ 
           name: fullName || user?.name, 
           email: email || user?.email,
@@ -175,8 +184,7 @@ export default function ProfilePage() {
         setFullName(data.user.name)
       }
       
-      // Refresh session to get updated data from database
-      await updateSession()
+      // No session refresh needed; backend is source of truth
       
       setAvatarError(null)
 
@@ -208,9 +216,9 @@ export default function ProfilePage() {
     setProfileSaveMessage('')
 
     try {
-      const response = await fetch('/api/user/update-profile', {
+      const response = await fetch(`${apiBase}/auth/me`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ name: fullName, email: email }),
       });
 
@@ -230,8 +238,7 @@ export default function ProfilePage() {
         }
       }
 
-      // Refresh session to get updated data from database
-      await updateSession()
+      // No session refresh needed; backend is source of truth
 
       setProfileSaveStatus('success')
       setProfileSaveMessage('Profile updated successfully!')
@@ -256,36 +263,7 @@ export default function ProfilePage() {
       return
     }
 
-    setIsValidatingPassword(true)
-    try {
-      const response = await fetch('/api/user/change-password', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          currentPassword: password, 
-          newPassword: password // Temporary, just for validation
-        }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        if (data.message?.toLowerCase().includes('current password') || 
-            data.message?.toLowerCase().includes('incorrect')) {
-          setPasswordErrors({ ...passwordErrors, currentPassword: 'Current password is incorrect' })
-        } else {
-          setPasswordErrors({ ...passwordErrors, currentPassword: undefined })
-        }
-      } else {
-        // If it succeeds, password is correct (but we won't actually change it)
-        setPasswordErrors({ ...passwordErrors, currentPassword: undefined })
-      }
-    } catch (error) {
-      // Don't show error on validation, only on actual submit
-      setPasswordErrors({ ...passwordErrors, currentPassword: undefined })
-    } finally {
-      setIsValidatingPassword(false)
-    }
+    setIsValidatingPassword(false)
   }
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -312,9 +290,9 @@ export default function ProfilePage() {
     setIsSaving(true)
 
     try {
-      const response = await fetch('/api/user/change-password', {
+      const response = await fetch(`${apiBase}/auth/change-password`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ currentPassword, newPassword }),
       });
 
@@ -358,9 +336,9 @@ export default function ProfilePage() {
     setDeleteError(null)
 
     try {
-      const response = await fetch('/api/user/delete-account', {
+      const response = await fetch(`${apiBase}/auth/me`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
       });
 
       if (!response.ok) {
@@ -390,9 +368,9 @@ export default function ProfilePage() {
     setPlanChangeMessage('')
 
     try {
-      const response = await fetch('/api/user/change-plan', {
+      const response = await fetch(`${apiBase}/auth/subscription/plan`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ plan: newPlan }),
       })
 
@@ -409,15 +387,16 @@ export default function ProfilePage() {
       setSubscriptionPlan(newPlan)
       
       // Refresh subscription details
-      const subResponse = await fetch('/api/user/subscription')
+      const subResponse = await fetch(`${apiBase}/auth/subscription`, {
+        headers: getAuthHeaders()
+      })
       if (subResponse.ok) {
         const subData = await subResponse.json()
         if (subData.status) setSubscriptionStatus(subData.status)
         if (subData.endDate) setSubscriptionEndDate(new Date(subData.endDate))
       }
       
-      // Refresh session to update subscription status
-      await updateSession()
+      // No session refresh needed
       
       // Clear success message after 3 seconds
       setTimeout(() => {
@@ -443,9 +422,9 @@ export default function ProfilePage() {
     setCancelMessage('')
 
     try {
-      const response = await fetch('/api/user/cancel-subscription', {
+      const response = await fetch(`${apiBase}/auth/subscription/cancel`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
       })
 
       const data = await response.json()
@@ -463,8 +442,7 @@ export default function ProfilePage() {
         setSubscriptionEndDate(new Date(data.endDate))
       }
       
-      // Refresh session to update subscription status
-      await updateSession()
+      // No session refresh needed
       
       // Clear success message after 5 seconds
       setTimeout(() => {

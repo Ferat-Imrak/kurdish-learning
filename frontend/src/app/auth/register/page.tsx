@@ -94,8 +94,8 @@ export default function RegisterPage() {
     setIsLoading(true)
     
     try {
-      // Use frontend's /api/register (same origin – works on Vercel without a separate backend)
-      const res = await fetch('/api/register', {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+      const res = await fetch(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

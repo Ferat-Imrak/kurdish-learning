@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useSession } from 'next-auth/react'
 import { useRouter, usePathname } from 'next/navigation'
+import { useAuth } from '../app/providers'
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { data: session, status } = useSession()
+  const { user, loading } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
   const [subscriptionStatus, setSubscriptionStatus] = useState<'loading' | 'active' | 'expired'>('loading')
@@ -16,17 +16,21 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     const isPublicPath = publicPaths.includes(pathname)
 
     // If not loading and not authenticated and not on a public path, redirect to login
-    if (status !== 'loading' && !session && !isPublicPath) {
+    if (!loading && !user && !isPublicPath) {
       router.push('/auth/login')
     }
-  }, [session, status, pathname, router])
+  }, [user, loading, pathname, router])
 
   // Check subscription status when authenticated
   useEffect(() => {
     const checkSubscription = async () => {
-      if (status === 'authenticated' && session) {
+      if (user) {
         try {
-          const response = await fetch('/api/user/subscription')
+          const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+          const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')
+          const response = await fetch(`${apiBase}/auth/subscription`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined
+          })
           if (response.ok) {
             const data = await response.json()
             // Check if expired (including CANCELED past end date)
@@ -47,10 +51,10 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
       }
     }
     checkSubscription()
-  }, [session, status])
+  }, [user])
 
   // Show loading state while checking authentication
-  if (status === 'loading') {
+  if (loading) {
     return (
       <div className="min-h-screen bg-backgroundCream flex items-center justify-center">
         <div className="text-center">
@@ -68,7 +72,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   }
 
   // Check subscription if authenticated
-  if (session && status === 'authenticated') {
+  if (user) {
     if (subscriptionStatus === 'loading') {
       return (
         <div className="min-h-screen bg-backgroundCream flex items-center justify-center">

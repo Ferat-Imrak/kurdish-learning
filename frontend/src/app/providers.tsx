@@ -1,47 +1,93 @@
 'use client'
 
-import { SessionProvider, useSession, signOut as nextAuthSignOut } from 'next-auth/react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { ProgressProvider } from '../contexts/ProgressContext'
 import { GamesProgressProvider } from '../contexts/GamesProgressContext'
 
-type SimpleUser = { email?: string | null, name?: string | null, image?: string | null }
+type AuthUser = {
+  id?: string
+  email?: string | null
+  name?: string | null
+  image?: string | null
+  role?: string
+}
+
+type AuthContextValue = {
+  user: AuthUser | null
+  loading: boolean
+  signOut: () => Promise<void>
+}
+
+const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
 export function useAuth() {
-  const { data, status } = useSession()
-  return {
-    user: (data?.user as SimpleUser) || null,
-    loading: status === 'loading',
-    signOut: async () => { 
-      // Clear the session cookie first
-      if (typeof window !== 'undefined') {
-        try {
-          // Clear NextAuth session
-          await nextAuthSignOut({ redirect: false })
-          
-          // Also clear any other session-related cookies
-          document.cookie.split(";").forEach((c) => {
-            const eqPos = c.indexOf("=")
-            const name = eqPos > -1 ? c.substr(0, eqPos).trim() : c.trim()
-            if (name.includes('session') || name.includes('auth')) {
-              document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`
-              document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`
-            }
-          })
-        } catch (error) {
-          console.error('Error clearing session:', error)
-        }
-        window.location.href = window.location.origin
-      } else {
-        await nextAuthSignOut({ callbackUrl: '/' })
-      }
-    },
+  const ctx = useContext(AuthContext)
+  if (!ctx) {
+    throw new Error('useAuth must be used within AuthProvider')
   }
+  return ctx
+}
+
+function getStoredToken(): string | null {
+  if (typeof window === 'undefined') return null
+  return localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')
+}
+
+async function clearStoredToken() {
+  if (typeof window === 'undefined') return
+  localStorage.removeItem('auth_token')
+  sessionStorage.removeItem('auth_token')
+}
+
+function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const token = getStoredToken()
+        if (!token) {
+          setUser(null)
+          return
+        }
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+        const res = await fetch(`${apiBase}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (!res.ok) {
+          await clearStoredToken()
+          setUser(null)
+          return
+        }
+        const data = await res.json()
+        setUser(data?.user || null)
+      } catch (error) {
+        console.error('Failed to load user:', error)
+        setUser(null)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadUser()
+  }, [])
+
+  const value = useMemo<AuthContextValue>(() => ({
+    user,
+    loading,
+    signOut: async () => {
+      await clearStoredToken()
+      window.location.href = window.location.origin
+    },
+  }), [user, loading])
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <SessionProvider>
+    <AuthProvider>
       <ProgressProvider>
         <GamesProgressProvider>
           {children}
@@ -54,7 +100,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           }}
         />
       </ProgressProvider>
-    </SessionProvider>
+    </AuthProvider>
   )
 }
 
