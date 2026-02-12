@@ -165,7 +165,10 @@ module "backend" {
 }
 
 locals {
-  backend_api_url = "${module.backend.service_url}/api"
+  backend_service_url = module.backend.service_url
+  backend_api_url = startswith(local.backend_service_url, "http")
+    ? "${local.backend_service_url}/api"
+    : "https://${local.backend_service_url}/api"
 }
 
 # Amplify - Frontend (Next.js SSR)
