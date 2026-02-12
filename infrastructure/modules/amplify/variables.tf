@@ -65,3 +65,9 @@ variable "use_service_linked_role" {
   type        = bool
   default     = false
 }
+
+variable "manage_service_role" {
+  description = "Create and manage the Amplify service role in Terraform"
+  type        = bool
+  default     = true
+}

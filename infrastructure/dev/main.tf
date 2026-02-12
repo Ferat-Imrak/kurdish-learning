@@ -189,6 +189,7 @@ module "frontend" {
   subdomains      = ["", "www"]
   service_role_suffix = var.amplify_service_role_suffix
   use_service_linked_role = var.amplify_use_service_linked_role
+  manage_service_role     = var.amplify_manage_service_role
 }
 
 # Secrets Manager for sensitive data

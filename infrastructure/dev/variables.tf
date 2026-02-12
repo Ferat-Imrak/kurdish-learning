@@ -81,6 +81,12 @@ variable "amplify_use_service_linked_role" {
   default     = false
 }
 
+variable "amplify_manage_service_role" {
+  description = "Manage Amplify service role via Terraform"
+  type        = bool
+  default     = true
+}
+
 variable "backend_repository_url" {
   description = "GitHub repository URL for the backend"
   type        = string
