@@ -7,7 +7,7 @@ data "aws_iam_policy_document" "amplify_assume_role" {
     effect = "Allow"
     principals {
       type        = "Service"
-      identifiers = ["amplify.amazonaws.com"]
+      identifiers = ["amplify.amazonaws.com", "codebuild.amazonaws.com"]
     }
     actions = ["sts:AssumeRole"]
   }
