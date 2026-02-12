@@ -42,9 +42,11 @@ resource "aws_amplify_app" "this" {
   access_token         = var.github_access_token
   platform             = "WEB_COMPUTE"
   enable_branch_auto_build = true
-  iam_service_role_arn = var.manage_service_role ? (
-    var.use_service_linked_role ? data.aws_iam_role.amplify_slr[0].arn : aws_iam_role.amplify_service[0].arn
-  ) : null
+  iam_service_role_arn = var.service_role_arn_override != "" ? var.service_role_arn_override : (
+    var.manage_service_role ? (
+      var.use_service_linked_role ? data.aws_iam_role.amplify_slr[0].arn : aws_iam_role.amplify_service[0].arn
+    ) : null
+  )
 
   environment_variables = var.environment_variables
 

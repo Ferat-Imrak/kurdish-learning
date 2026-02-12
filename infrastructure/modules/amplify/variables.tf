@@ -42,6 +42,12 @@ variable "app_name_suffix" {
   default     = ""
 }
 
+variable "service_role_arn_override" {
+  description = "Optional pre-existing IAM role ARN for Amplify to assume"
+  type        = string
+  default     = ""
+}
+
 variable "domain_name" {
   description = "Domain name to attach (optional)"
   type        = string

@@ -93,6 +93,12 @@ variable "amplify_app_name_suffix" {
   default     = ""
 }
 
+variable "amplify_service_role_arn_override" {
+  description = "Optional pre-existing IAM role ARN for Amplify"
+  type        = string
+  default     = ""
+}
+
 variable "backend_repository_url" {
   description = "GitHub repository URL for the backend"
   type        = string
