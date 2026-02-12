@@ -87,6 +87,12 @@ variable "amplify_manage_service_role" {
   default     = true
 }
 
+variable "amplify_app_name_suffix" {
+  description = "Optional suffix to force a new Amplify app"
+  type        = string
+  default     = ""
+}
+
 variable "backend_repository_url" {
   description = "GitHub repository URL for the backend"
   type        = string

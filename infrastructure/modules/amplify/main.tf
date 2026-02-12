@@ -37,7 +37,7 @@ data "aws_iam_role" "amplify_slr" {
 }
 
 resource "aws_amplify_app" "this" {
-  name                 = "${var.project_name}-${var.environment}-frontend"
+  name                 = "${var.project_name}-${var.environment}-frontend${var.app_name_suffix}"
   repository           = var.repository_url
   access_token         = var.github_access_token
   platform             = "WEB_COMPUTE"

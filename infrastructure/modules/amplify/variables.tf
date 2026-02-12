@@ -36,6 +36,12 @@ variable "environment_variables" {
   default     = {}
 }
 
+variable "app_name_suffix" {
+  description = "Optional suffix to force a new Amplify app"
+  type        = string
+  default     = ""
+}
+
 variable "domain_name" {
   description = "Domain name to attach (optional)"
   type        = string
