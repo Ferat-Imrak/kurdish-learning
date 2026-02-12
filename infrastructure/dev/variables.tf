@@ -69,6 +69,12 @@ variable "amplify_github_token" {
   sensitive   = true
 }
 
+variable "amplify_service_role_suffix" {
+  description = "Optional suffix to force a new Amplify service role"
+  type        = string
+  default     = ""
+}
+
 variable "backend_repository_url" {
   description = "GitHub repository URL for the backend"
   type        = string

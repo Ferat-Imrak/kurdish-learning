@@ -53,3 +53,9 @@ variable "subdomains" {
   type        = list(string)
   default     = ["", "www"]
 }
+
+variable "service_role_suffix" {
+  description = "Optional suffix to force a new Amplify service role"
+  type        = string
+  default     = ""
+}

@@ -14,7 +14,7 @@ data "aws_iam_policy_document" "amplify_assume_role" {
 }
 
 resource "aws_iam_role" "amplify_service" {
-  name               = "${var.project_name}-${var.environment}-amplify-service-role"
+  name               = "${var.project_name}-${var.environment}-amplify-service-role${var.service_role_suffix}"
   assume_role_policy = data.aws_iam_policy_document.amplify_assume_role.json
 }
 
