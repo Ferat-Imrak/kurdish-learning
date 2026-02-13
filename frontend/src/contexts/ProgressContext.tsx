@@ -281,6 +281,8 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
   ) => {
     setLessonProgress(prev => {
       const current = prev[lessonId]
+      const clampedProgress = Math.round(Math.max(0, Math.min(100, progress)))
+      const safeProgress = Math.max(current?.progress ?? 0, clampedProgress)
       
       // If timeSpent is provided, use it directly (it's already the total from the lesson)
       // Otherwise keep existing timeSpent
@@ -292,7 +294,7 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
         ...prev,
         [lessonId]: {
           lessonId,
-          progress: Math.round(Math.max(0, Math.min(100, progress))), // Clamp between 0-100 and round to whole number
+          progress: safeProgress, // Never allow progress to decrease
           status,
           lastAccessed: new Date(),
           score: score !== undefined ? score : current?.score,
