@@ -55,14 +55,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }))
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
-})
-app.use(limiter)
-
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
@@ -87,8 +79,13 @@ app.get('/health', (req, res) => {
   })
 })
 
-// API routes
-app.use('/api/auth', authRoutes)
+// Auth-only rate limiting (higher limit)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300, // limit each IP to 300 login requests per windowMs
+  message: 'Too many login requests from this IP, please try again later.'
+})
+app.use('/api/auth', authLimiter, authRoutes)
 app.use('/api/users', userRoutes)
 app.use('/api/lessons', lessonRoutes)
 app.use('/api/progress', progressRoutes)

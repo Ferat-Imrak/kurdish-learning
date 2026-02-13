@@ -48,20 +48,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }))
 
-// Rate limiting - more lenient in development
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'development' ? 1000 : 100, // Higher limit in dev for mobile testing
-  message: 'Too many requests from this IP, please try again later.',
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  skip: (req) => {
-    // Skip rate limiting for health checks
-    return req.path === '/health' || req.path === '/api/health'
-  }
-})
-app.use(limiter)
-
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
@@ -93,8 +79,15 @@ app.get('/api/health', (req, res) => {
   })
 })
 
-// API routes
-app.use('/api/auth', authRoutes)
+// Auth-only rate limiting (higher limit)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: process.env.NODE_ENV === 'development' ? 1000 : 300,
+  message: 'Too many login requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false
+})
+app.use('/api/auth', authLimiter, authRoutes)
 app.use('/api/progress', progressRoutes)
 app.use('/api/achievements', achievementRoutes)
 
