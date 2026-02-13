@@ -1,5 +1,7 @@
 # Progress system: deep-dive analysis (current behavior)
 
+> Note: This document is for internal reference and does not affect builds.
+
 ## What was fixed
 
 - **Body Parts (and all audio lessons):** “X/24” now **persists** after leaving and coming back. We store which audio keys were played (`playedAudioKeys`) and use that for the count and for dimming.
