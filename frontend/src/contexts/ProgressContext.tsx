@@ -148,9 +148,12 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       clearTimeout(syncTimeoutRef.current)
     }
 
-    // Debounce: wait 2 seconds before syncing
+    // Debounce to reduce API calls
     syncTimeoutRef.current = setTimeout(async () => {
       try {
+        if (Date.now() - lastSyncRef.current < 10000) {
+          return
+        }
         console.log('🔄 Frontend: Syncing progress to backend...', Object.keys(progress).length, 'lessons');
         
         // Debug: Log Alphabet progress specifically
@@ -229,7 +232,7 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
         console.error('❌ Frontend: Failed to sync progress to backend:', error.message || error);
         // Continue with local progress on error
       }
-    }, 5000) // 5 second debounce (increased to reduce API calls)
+    }, 20000) // 20 second debounce to avoid rate limits
   }, [user?.email])
 
   // Load progress from localStorage and sync from backend on mount

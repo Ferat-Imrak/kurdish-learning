@@ -20,6 +20,7 @@ import { Asset } from 'expo-asset';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
 import { restoreRefsFromProgress } from '../../lib/utils/progressHelper';
+import { useLessonProgressTimer } from '../../lib/utils/useLessonProgressTimer';
 
 const { width } = Dimensions.get('window');
 
@@ -274,6 +275,14 @@ export default function HousePage() {
     // Use Math.max to prevent progress from dropping due to new calculation method
     return Math.max(baseProgress, calculatedProgress);
   };
+
+  useLessonProgressTimer({
+    lessonId: LESSON_ID,
+    startTimeRef,
+    calculateProgress: () => calculateProgress(),
+    getLessonProgress,
+    updateLessonProgress,
+  });
 
   const handleAudioPlay = () => {
     const currentProgress = getLessonProgress(LESSON_ID);

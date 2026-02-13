@@ -22,6 +22,7 @@ import { Asset } from 'expo-asset';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
 import { restoreRefsFromProgress } from '../../lib/utils/progressHelper';
+import { useLessonProgressTimer } from '../../lib/utils/useLessonProgressTimer';
 import NumberCard from '../components/NumberCard';
 import ExampleCard from '../components/ExampleCard';
 
@@ -576,6 +577,14 @@ export default function NumbersPage() {
     
     return totalProgress;
   };
+
+  useLessonProgressTimer({
+    lessonId: LESSON_ID,
+    startTimeRef,
+    calculateProgress: () => calculateProgress(),
+    getLessonProgress,
+    updateLessonProgress,
+  });
 
   const handleAudioPlay = (audioKey: string) => {
     if (uniqueAudiosPlayedRef.current.has(audioKey)) return;

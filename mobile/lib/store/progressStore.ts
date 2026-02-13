@@ -290,6 +290,10 @@ export const useProgressStore = create<ProgressState>((set, get) => ({
     const clampedProgress = Math.max(0, Math.min(100, progress));
     const currentProgress = get().lessonProgress[lessonId];
     const currentTimeSpent = currentProgress?.timeSpent || 0;
+    const mergedPlayedAudioKeys =
+      playedAudioKeys && playedAudioKeys.length > 0
+        ? playedAudioKeys
+        : currentProgress?.playedAudioKeys;
 
     // Callers pass total time spent (base + session); use as replacement, not delta
     const newTimeSpent = timeSpent !== undefined
@@ -303,7 +307,7 @@ export const useProgressStore = create<ProgressState>((set, get) => ({
       lastAccessed: new Date(),
       score: score !== undefined ? score : currentProgress?.score,
       timeSpent: newTimeSpent,
-      ...(playedAudioKeys && playedAudioKeys.length > 0 && { playedAudioKeys }),
+      ...(mergedPlayedAudioKeys && { playedAudioKeys: mergedPlayedAudioKeys }),
     };
 
     const updatedProgress = {

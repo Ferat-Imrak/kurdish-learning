@@ -168,6 +168,32 @@ export default function AlphabetPage() {
     }
   }, []) // Empty dependency array - only run once on mount
 
+  useEffect(() => {
+    if (!refsInitializedRef.current) {
+      return
+    }
+
+    const tick = () => {
+      const currentProgress = getLessonProgress(LESSON_ID)
+      if (currentProgress.status === 'COMPLETED') {
+        return
+      }
+
+      const baseTimeSpent = currentProgress.timeSpent || 0
+      const sessionTimeMinutes = Math.floor((Date.now() - startTimeRef.current) / 1000 / 60)
+      const totalTimeSpent = baseTimeSpent + sessionTimeMinutes
+      const safeTimeSpent = Math.min(1000, totalTimeSpent)
+
+      const progress = calculateProgress()
+      const status = progress >= 100 ? 'COMPLETED' : 'IN_PROGRESS'
+
+      updateLessonProgress(LESSON_ID, progress, status, currentProgress.score, safeTimeSpent)
+    }
+
+    const interval = setInterval(tick, 30000)
+    return () => clearInterval(interval)
+  }, [])
+
   const calculateProgress = () => {
     // Get current progress to access latest timeSpent
     const currentProgress = getLessonProgress(LESSON_ID)

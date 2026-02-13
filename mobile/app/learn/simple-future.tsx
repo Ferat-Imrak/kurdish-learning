@@ -20,6 +20,7 @@ import { Audio } from 'expo-av';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
 import { restoreRefsFromProgress, getLearnedCount } from '../../lib/utils/progressHelper';
+import { useLessonProgressTimer } from '../../lib/utils/useLessonProgressTimer';
 
 const { width } = Dimensions.get('window');
 
@@ -501,6 +502,14 @@ export default function SimpleFuturePage() {
 
     return Math.min(100, newAudioProgress + newTimeProgress + practiceProgress);
   };
+
+  useLessonProgressTimer({
+    lessonId: LESSON_ID,
+    startTimeRef,
+    calculateProgress: () => calculateProgress(),
+    getLessonProgress,
+    updateLessonProgress,
+  });
 
   const handleAnswerSelect = (index: number) => {
     if (showFeedback || isCompleted) return;

@@ -19,6 +19,7 @@ import { Audio } from 'expo-av';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
 import { restoreRefsFromProgress, getLearnedCount } from '../../lib/utils/progressHelper';
+import { useLessonProgressTimer } from '../../lib/utils/useLessonProgressTimer';
 
 const { width } = Dimensions.get('window');
 
@@ -1252,6 +1253,14 @@ export default function DailyConversationsPage() {
     const timeProgress = Math.min(50, (baseTimeSpent + sessionTimeMinutes) * 10);
     return Math.min(100, audioProgress + timeProgress);
   };
+
+  useLessonProgressTimer({
+    lessonId: LESSON_ID,
+    startTimeRef,
+    calculateProgress: () => calculateProgress(),
+    getLessonProgress,
+    updateLessonProgress,
+  });
 
   const filteredConversations = useMemo(() => {
     return selectedCategory === 'all'

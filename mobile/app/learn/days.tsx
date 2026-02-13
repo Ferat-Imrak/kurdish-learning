@@ -20,6 +20,7 @@ const TEXT_PRIMARY = '#0F172A';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
 import { restoreRefsFromProgress } from '../../lib/utils/progressHelper';
+import { useLessonProgressTimer } from '../../lib/utils/useLessonProgressTimer';
 import DayCard from '../components/DayCard';
 import PhraseCard from '../components/PhraseCard';
 
@@ -458,6 +459,14 @@ export default function DaysPage() {
     
     return totalProgress;
   };
+
+  useLessonProgressTimer({
+    lessonId: LESSON_ID,
+    startTimeRef,
+    calculateProgress: () => calculateProgress(),
+    getLessonProgress,
+    updateLessonProgress,
+  });
 
   const handleAudioPlay = (audioKey: string) => {
     if (uniqueAudiosPlayedRef.current.has(audioKey)) return;

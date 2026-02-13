@@ -21,6 +21,7 @@ import { Asset } from 'expo-asset';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
 import { restoreRefsFromProgress } from '../../lib/utils/progressHelper';
+import { useLessonProgressTimer } from '../../lib/utils/useLessonProgressTimer';
 
 const { width } = Dimensions.get('window');
 
@@ -301,6 +302,14 @@ export default function NaturePage() {
 
     return { progress: totalProgress, timeSpent: safeTotalTimeSpent };
   };
+
+  useLessonProgressTimer({
+    lessonId: LESSON_ID,
+    startTimeRef,
+    calculateProgress: () => calculateProgress().progress,
+    getLessonProgress,
+    updateLessonProgress,
+  });
 
   const filteredItems = useMemo(() => {
     return selectedCategory === 'all'

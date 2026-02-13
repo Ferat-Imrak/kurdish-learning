@@ -20,6 +20,7 @@ import { Asset } from 'expo-asset';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
 import { restoreRefsFromProgress } from '../../lib/utils/progressHelper';
+import { useLessonProgressTimer } from '../../lib/utils/useLessonProgressTimer';
 
 const { width } = Dimensions.get('window');
 
@@ -340,6 +341,14 @@ export default function BodyPartsPage() {
     // Progress = (played count / total) * 100 so count and % stay in sync with persisted keys
     return Math.min(100, Math.round((currentUniqueAudios / totalAudios) * 100));
   };
+
+  useLessonProgressTimer({
+    lessonId: LESSON_ID,
+    startTimeRef,
+    calculateProgress: () => calculateProgress(),
+    getLessonProgress,
+    updateLessonProgress,
+  });
 
   const handleAudioPlay = () => {
     const currentProgress = getLessonProgress(LESSON_ID);

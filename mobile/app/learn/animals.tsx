@@ -20,6 +20,7 @@ import { Asset } from 'expo-asset';
 import { useAuthStore } from '../../lib/store/authStore';
 import { useProgressStore } from '../../lib/store/progressStore';
 import { restoreRefsFromProgress } from '../../lib/utils/progressHelper';
+import { useLessonProgressTimer } from '../../lib/utils/useLessonProgressTimer';
 
 const { width } = Dimensions.get('window');
 
@@ -341,6 +342,14 @@ export default function AnimalsPage() {
     const totalProgress = Math.min(100, audioProgress + newTimeProgress + practiceProgress);
     return totalProgress;
   };
+
+  useLessonProgressTimer({
+    lessonId: LESSON_ID,
+    startTimeRef,
+    calculateProgress: () => calculateProgress(practiceScore),
+    getLessonProgress,
+    updateLessonProgress,
+  });
 
   const handleAudioPlay = () => {
     const currentProgress = getLessonProgress(LESSON_ID);
